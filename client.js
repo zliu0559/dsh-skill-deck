@@ -16,6 +16,10 @@ window.__ModuleLoader__.load({
     const API = '/dsh-skill-deck';
     const UNCATEGORIZED = 'Uncategorized';
     const UNKNOWN_AUTHOR = 'Unknown';
+    const VIEWS = ['list', 'cards'];
+    const GROUPINGS = ['category', 'author', 'root'];
+    const VIEW_KEY = NS + '/view';
+    const GROUP_KEY = NS + '/groupBy';
 
     const zh = {
       title: '技能',
@@ -102,6 +106,14 @@ window.__ModuleLoader__.load({
       annotationAction: '保存标注',
       annotationSaving: '保存中…',
       annotated: '标注已保存',
+      viewLabel: '视图',
+      viewList: '列表',
+      viewCards: '卡片',
+      groupBy: '分组',
+      groupByCategory: '分类',
+      groupByAuthor: '作者',
+      groupByRoot: '来源',
+      filterLabel: '状态',
     };
 
     const en = {
@@ -189,6 +201,14 @@ window.__ModuleLoader__.load({
       annotationAction: 'Save tags',
       annotationSaving: 'Saving…',
       annotated: 'Tags saved',
+      viewLabel: 'View',
+      viewList: 'List',
+      viewCards: 'Cards',
+      groupBy: 'Group by',
+      groupByCategory: 'Category',
+      groupByAuthor: 'Author',
+      groupByRoot: 'Root',
+      filterLabel: 'Status',
     };
 
     const language = (navigator.language || 'en').toLowerCase();
@@ -211,6 +231,22 @@ window.__ModuleLoader__.load({
       .deck-btn.primary:hover { filter: brightness(.94); background: var(--dsw-alias-brand-primary, #3b82f6); }
       .deck-btn.danger { color: var(--dsw-alias-state-error-primary, #dc2626); border-color: rgba(220,38,38,.4); }
       .deck-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+      .deck-view { display: inline-flex; border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.3)); border-radius: var(--dsw-radius-md, 8px); overflow: hidden; }
+      .deck-view .deck-btn { height: 28px; border: 0; border-radius: 0; }
+      .deck-view .deck-btn + .deck-btn { border-left: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.3)); }
+      .deck-view .deck-btn[aria-pressed='true'] { background: rgba(59,130,246,.14); color: var(--dsw-alias-state-business-primary, #3b82f6); font-weight: 600; }
+      .deck-cards { display: flex; flex-direction: column; gap: 18px; }
+      .deck-group { display: flex; flex-direction: column; gap: 8px; }
+      .deck-group-head { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 13px; font-weight: 600; }
+      .deck-group-count { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 18px; padding: 0 6px; border-radius: 999px; background: rgba(127,127,127,.16); font-size: 10px; font-weight: 600; }
+      .deck-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; align-items: stretch; }
+      .deck-card { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 12px 14px; border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.22)); border-radius: var(--dsw-radius-lg, 10px); }
+      .deck-card-name { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+      .deck-card-desc { font-size: 12px; line-height: 1.5; color: var(--dsw-alias-label-secondary, inherit); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+      .deck-card-meta { display: flex; gap: 8px; flex-wrap: wrap; font-size: 11px; color: var(--dsw-alias-label-caption, inherit); }
+      .deck-card-controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-top: auto; }
+      .deck-card-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+      .deck-card-actions .deck-btn { height: 24px; padding: 0 8px; font-size: 11px; }
       .deck-row { display: grid; grid-template-columns: minmax(0,1fr) auto auto; gap: 12px; align-items: center; padding: 12px 14px; border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.22)); border-radius: var(--dsw-radius-lg, 10px); }
       .deck-name { display: flex; align-items: center; gap: 8px; font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
       .deck-desc { margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--dsw-alias-label-secondary, inherit); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -249,7 +285,7 @@ window.__ModuleLoader__.load({
       .deck-page > .deck { width: 100%; max-width: 960px; margin: 0 auto; }
       .deck-icon { display: block; opacity: .72; }
       .deck-icon.active { opacity: 1; }
-      @media (max-width: 720px) { .deck-row { grid-template-columns: 1fr; } }
+      @media (max-width: 720px) { .deck-row, .deck-card-grid { grid-template-columns: 1fr; } }
     `;
 
     function injectStyles() {
@@ -317,6 +353,68 @@ window.__ModuleLoader__.load({
 
     function displayAuthor(value) {
       return !value || value === UNKNOWN_AUTHOR ? t('unknownAuthor') : value;
+    }
+
+    function readPreference(key, allowed, fallback) {
+      try {
+        const value = window.localStorage.getItem(key);
+        if (allowed.includes(value)) return value;
+      } catch {
+        /* storage may be unavailable (private mode, sandboxed page) */
+      }
+      return fallback;
+    }
+
+    function writePreference(key, value) {
+      try {
+        window.localStorage.setItem(key, value);
+      } catch {
+        /* the preference simply does not survive this visit */
+      }
+    }
+
+    function groupValue(skill, dimension) {
+      if (dimension === 'author') return (skill.author || '').trim();
+      if (dimension === 'root') return (skill.root || '').trim();
+      return (skill.category || '').trim();
+    }
+
+    function isFallbackGroup(value, dimension) {
+      if (value === '') return true;
+      if (dimension === 'category') return value.toLowerCase() === UNCATEGORIZED.toLowerCase();
+      if (dimension === 'author') return value.toLowerCase() === UNKNOWN_AUTHOR.toLowerCase();
+      return false;
+    }
+
+    /**
+     * Group the already-filtered skills. Values compare trimmed and
+     * case-insensitively; the first spelling seen is displayed. Sections sort
+     * by descending count then name, with the fallback group always last.
+     */
+    function groupSkills(skills, dimension) {
+      const groups = new Map();
+      for (const skill of skills) {
+        const value = groupValue(skill, dimension);
+        const fallback = isFallbackGroup(value, dimension);
+        const key = fallback ? '\u0000fallback' : value.toLowerCase();
+        let group = groups.get(key);
+        if (!group) {
+          group = { key, label: value, fallback, count: 0, skills: [] };
+          groups.set(key, group);
+        }
+        group.count += 1;
+        group.skills.push(skill);
+      }
+      return [...groups.values()].sort((a, b) => {
+        if (a.fallback !== b.fallback) return a.fallback ? 1 : -1;
+        if (a.count !== b.count) return b.count - a.count;
+        return a.label.localeCompare(b.label, undefined, { sensitivity: 'base' });
+      });
+    }
+
+    function groupLabel(group, dimension) {
+      if (!group.fallback) return group.label;
+      return dimension === 'author' || dimension === 'root' ? t('unknownAuthor') : t('uncategorized');
     }
 
     function Badge(props) {
@@ -458,6 +556,70 @@ window.__ModuleLoader__.load({
           h('button', { className: 'deck-btn', onClick: () => onReveal(skill) }, t('reveal')),
           h('button', { className: 'deck-btn', onClick: () => onDuplicate(skill) }, t('duplicate')),
           h('button', { className: 'deck-btn danger', onClick: () => onRemove(skill) }, t('remove')),
+        ),
+      );
+    }
+
+    function SkillCard(props) {
+      const { skill, busy, onToggle, onEdit, onReveal, onDuplicate, onRemove, onAnnotate } = props;
+      return h(
+        'article',
+        { className: 'deck-card', 'data-skill': skill.name },
+        h(
+          'div',
+          { className: 'deck-card-name' },
+          skill.name,
+          skill.modelInvocable ? h(Badge, null, t('modelSurface')) : null,
+          skill.userInvocable ? h(Badge, { muted: true }, t('userSurface')) : null,
+          skill.valid ? null : h(Badge, { warn: true }, t('invalid')),
+        ),
+        h('div', { className: 'deck-card-desc' }, skill.description || t('invalid')),
+        h(
+          'div',
+          { className: 'deck-card-meta' },
+          h('span', null, skill.root),
+          h('span', { className: 'deck-tag' }, t('categoryLabel') + ' · ' + displayCategory(skill.category)),
+          h('span', { className: 'deck-tag' }, t('authorLabel') + ' · ' + displayAuthor(skill.author)),
+          h('span', null, skill.files + ' ' + t('files') + ' · ' + formatBytes(skill.bytes)),
+        ),
+        h(
+          'div',
+          { className: 'deck-card-controls' },
+          h(
+            'div',
+            { className: 'deck-switches' },
+            h(SurfaceSwitch, {
+              on: skill.modelInvocable,
+              label: t('modelSurface'),
+              title: t('modelHint'),
+              disabled: busy === skill.name + ':model',
+              onClick: () => onToggle(skill, 'model', !skill.modelInvocable),
+            }),
+            h(SurfaceSwitch, {
+              on: skill.userInvocable,
+              label: t('userSurface'),
+              title: t('userHint'),
+              disabled: busy === skill.name + ':user',
+              onClick: () => onToggle(skill, 'user', !skill.userInvocable),
+            }),
+          ),
+          h(
+            'div',
+            { className: 'deck-card-actions' },
+            h(
+              'button',
+              {
+                className: 'deck-btn',
+                disabled: busy === skill.name + ':read',
+                onClick: () => onEdit(skill),
+              },
+              t('edit'),
+            ),
+            h('button', { className: 'deck-btn', onClick: () => onAnnotate && onAnnotate(skill) }, t('tag')),
+            h('button', { className: 'deck-btn', onClick: () => onReveal(skill) }, t('reveal')),
+            h('button', { className: 'deck-btn', onClick: () => onDuplicate(skill) }, t('duplicate')),
+            h('button', { className: 'deck-btn danger', onClick: () => onRemove(skill) }, t('remove')),
+          ),
         ),
       );
     }
@@ -676,6 +838,8 @@ window.__ModuleLoader__.load({
       const [state, setState] = useState({ status: 'loading', error: null, skills: [], roots: [], totals: null, version: '', platform: '', client: null });
       const [query, setQuery] = useState('');
       const [filter, setFilter] = useState('all');
+      const [view, setView] = useState(() => readPreference(VIEW_KEY, VIEWS, 'list'));
+      const [groupBy, setGroupBy] = useState(() => readPreference(GROUP_KEY, GROUPINGS, 'category'));
       const [busy, setBusy] = useState('');
       const [editor, setEditor] = useState(null);
       const [draft, setDraft] = useState('');
@@ -703,6 +867,16 @@ window.__ModuleLoader__.load({
         if (toastTimer.current) clearTimeout(toastTimer.current);
         setToast({ message, kind: kind || 'ok' });
         toastTimer.current = setTimeout(() => setToast(null), 2600);
+      }, []);
+
+      const chooseView = useCallback((next) => {
+        setView(next);
+        writePreference(VIEW_KEY, next);
+      }, []);
+
+      const chooseGroupBy = useCallback((next) => {
+        setGroupBy(next);
+        writePreference(GROUP_KEY, next);
       }, []);
 
       const load = useCallback(async () => {
@@ -999,21 +1173,37 @@ window.__ModuleLoader__.load({
         });
       }, [filter, query, state.skills]);
 
-      const rows = visible.map((skill) =>
-        h(SkillRow, {
-          key: skill.name,
-          skill,
-          busy,
-          onToggle: toggle,
-          onEdit: openEditor,
-          onReveal: reveal,
-          onDuplicate: openDuplicate,
-          onAnnotate: openAnnotation,
-          onRemove: (target) => {
-            setConfirming(target);
-            setConfirmText('');
-          },
-        }),
+      const groups = useMemo(() => groupSkills(visible, groupBy), [groupBy, visible]);
+
+      const skillProps = (skill) => ({
+        key: skill.name,
+        skill,
+        busy,
+        onToggle: toggle,
+        onEdit: openEditor,
+        onReveal: reveal,
+        onDuplicate: openDuplicate,
+        onAnnotate: openAnnotation,
+        onRemove: (target) => {
+          setConfirming(target);
+          setConfirmText('');
+        },
+      });
+
+      const rows = visible.map((skill) => h(SkillRow, skillProps(skill)));
+
+      const cards = groups.map((group) =>
+        h(
+          'section',
+          { key: group.key, className: 'deck-group', 'data-group': group.key },
+          h(
+            'h4',
+            { className: 'deck-group-head' },
+            h('span', { className: 'deck-group-title' }, groupLabel(group, groupBy)),
+            h('span', { className: 'deck-group-count' }, String(group.count)),
+          ),
+          h('div', { className: 'deck-card-grid' }, group.skills.map((skill) => h(SkillCard, skillProps(skill)))),
+        ),
       );
 
       const body =
@@ -1032,7 +1222,9 @@ window.__ModuleLoader__.load({
               )
             : visible.length === 0
               ? h('div', { className: 'deck-empty' }, state.skills.length === 0 ? t('empty') : t('noMatch'))
-              : h('ul', { className: 'deck-list' }, rows);
+              : view === 'cards'
+                ? h('div', { className: 'deck-cards' }, cards)
+                : h('ul', { className: 'deck-list' }, rows);
 
       return h(
         'div',
@@ -1066,11 +1258,52 @@ window.__ModuleLoader__.load({
             }),
             h(
               'select',
-              { className: 'deck-select', value: filter, onChange: (event) => setFilter(event.target.value) },
+              {
+                className: 'deck-select deck-filter',
+                value: filter,
+                'aria-label': t('filterLabel'),
+                onChange: (event) => setFilter(event.target.value),
+              },
               h('option', { value: 'all' }, t('filterAll') + ' (' + counts.all + ')'),
               h('option', { value: 'enabled' }, t('filterEnabled') + ' (' + counts.enabled + ')'),
               h('option', { value: 'disabled' }, t('filterDisabled') + ' (' + counts.disabled + ')'),
               h('option', { value: 'invalid' }, t('filterInvalid') + ' (' + counts.invalid + ')'),
+            ),
+            h(
+              'div',
+              { className: 'deck-view', role: 'group', 'aria-label': t('viewLabel') },
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'deck-btn',
+                  'aria-pressed': view === 'list' ? 'true' : 'false',
+                  onClick: () => chooseView('list'),
+                },
+                t('viewList'),
+              ),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'deck-btn',
+                  'aria-pressed': view === 'cards' ? 'true' : 'false',
+                  onClick: () => chooseView('cards'),
+                },
+                t('viewCards'),
+              ),
+            ),
+            h(
+              'select',
+              {
+                className: 'deck-select deck-groupby',
+                value: groupBy,
+                'aria-label': t('groupBy'),
+                onChange: (event) => chooseGroupBy(event.target.value),
+              },
+              h('option', { value: 'category' }, t('groupByCategory')),
+              h('option', { value: 'author' }, t('groupByAuthor')),
+              h('option', { value: 'root' }, t('groupByRoot')),
             ),
             h('button', { className: 'deck-btn', onClick: openCreate }, t('create')),
             h(
@@ -1266,7 +1499,7 @@ window.__ModuleLoader__.load({
       name: NS,
       inject: ['slots'],
       apply,
-      components: { Panel, DeckPage, DeckIcon, SkillRow, CreateDialog, DuplicateDialog, AnnotationDialog, DiagFooter },
+      components: { Panel, DeckPage, DeckIcon, SkillRow, SkillCard, CreateDialog, DuplicateDialog, AnnotationDialog, DiagFooter },
     };
   },
 });
