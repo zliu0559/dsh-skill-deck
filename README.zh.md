@@ -1,5 +1,7 @@
 # 技能面板（Skill Deck）
 
+[![CI](https://github.com/zliu0559/dsh-skill-deck/actions/workflows/ci.yml/badge.svg)](https://github.com/zliu0559/dsh-skill-deck/actions/workflows/ci.yml)
+
 一个 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 插件，在设置里加一页 **技能**：浏览用户级技能目录下的全部技能，一键启停两种调用方式，直接编辑 `SKILL.md`，打开技能目录，或把技能移入回收站。
 
 [English](README.md) | 中文
@@ -74,6 +76,12 @@ npm test
 `index.js` 是 Host 半（挂在 `/dsh-skill-deck/*` 下的路由），`client.js` 是通过 `window.__ModuleLoader__` 注册的浏览器模块，`lib/` 放文件系统与 frontmatter 逻辑，测试直接复用。
 
 Host API 是同源 JSON，通过 `webServer.register` 挂载；每个写操作都会先按名称重新发现技能再定位路径，所以请求无法指向受管目录之外的文件。
+
+## 路线图
+
+- 项目级目录（`<repo>/.dsh/skills`）+ 工作区切换。
+- 从 GitHub `owner/repo` 直接安装技能，而不只是编辑本地已有技能。
+- 不想手写 frontmatter 的人可以用的「新建技能」表单。
 
 ## 许可
 

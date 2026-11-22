@@ -1,5 +1,7 @@
 # Skill Deck
 
+[![CI](https://github.com/zliu0559/dsh-skill-deck/actions/workflows/ci.yml/badge.svg)](https://github.com/zliu0559/dsh-skill-deck/actions/workflows/ci.yml)
+
 A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin that adds a **Skills** page to Settings: browse every skill under your DSH user roots, switch its two invocation surfaces on or off, edit its `SKILL.md`, open its folder, or move it to the trash.
 
 English | [中文](README.zh.md)
@@ -74,6 +76,12 @@ npm test
 `index.js` is the Host half (routes under `/dsh-skill-deck/*`), `client.js` is the browser module registered through `window.__ModuleLoader__`, and `lib/` holds the filesystem and frontmatter logic shared by the tests.
 
 The Host API is same-origin JSON, mounted through `webServer.register`, and every mutating request re-discovers the skill by name before touching a path, so a request cannot address a file outside the managed roots.
+
+## Roadmap
+
+- Project-level roots (`<repo>/.dsh/skills`) with a workspace picker.
+- Install a skill from a GitHub `owner/repo` source instead of only editing local ones.
+- A skill creation form for people who do not want to write frontmatter by hand.
 
 ## License
 
