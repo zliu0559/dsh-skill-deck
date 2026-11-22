@@ -74,7 +74,7 @@ function call(path, options) {
 
 test('exports a cordis plugin and mounts every route', () => {
   assert.equal(name, 'dsh-skill-deck');
-  for (const path of ['/state', '/create', '/read', '/save', '/toggle', '/delete', '/reveal']) {
+  for (const path of ['/state', '/create', '/signal', '/read', '/save', '/toggle', '/delete', '/reveal']) {
     assert.ok(routes.has('/dsh-skill-deck' + path), path);
   }
 });
@@ -99,6 +99,26 @@ test('read returns content and a revision', async () => {
   assert.equal(payload.ok, true);
   assert.match(payload.content, /# Demo/);
   assert.match(payload.revision, /^[0-9a-f]{16}$/);
+});
+
+test('the browser half can report that it loaded and rendered', async () => {
+  const before = JSON.parse((await call('/state')).body);
+  assert.equal(before.client.loadedAt, null);
+  const signal = await call('/signal', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', host: '127.0.0.1:1', 'user-agent': 'test-agent' },
+    body: JSON.stringify({ kind: 'loaded' }),
+  });
+  assert.equal(signal.status, 200);
+  const after = JSON.parse((await call('/state')).body);
+  assert.match(after.client.loadedAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(after.client.userAgent, 'test-agent');
+  const bad = await call('/signal', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', host: '127.0.0.1:1' },
+    body: JSON.stringify({ kind: 'bogus' }),
+  });
+  assert.equal(bad.status, 400);
 });
 
 test('create makes a new skill and refuses a duplicate', async () => {

@@ -77,6 +77,8 @@ window.__ModuleLoader__.load({
       copyDiag: '复制诊断信息',
       copied: '已复制',
       copyFailed: '复制失败，请手动选取。',
+      clientLoaded: '浏览器端已加载',
+      clientMissing: '浏览器端未加载',
     };
 
     const en = {
@@ -141,6 +143,8 @@ window.__ModuleLoader__.load({
       copyDiag: 'Copy diagnostics',
       copied: 'Copied',
       copyFailed: 'Could not copy; select the text manually.',
+      clientLoaded: 'Browser half loaded',
+      clientMissing: 'Browser half not loaded',
     };
 
     const language = (navigator.language || 'en').toLowerCase();
@@ -208,8 +212,25 @@ window.__ModuleLoader__.load({
       document.head.appendChild(tag);
     }
 
-    async function api(path, body) {
-      const init = body
+    /**
+     * Tell the Host that this bundle ran, and then that the panel rendered.
+     * The signal is the only way to prove the client half is actually alive.
+     * @param {'loaded'|'rendered'} kind
+     */
+    function signal(kind) {
+      try {
+        fetch(API + '/signal', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ kind }),
+        }).catch(() => {});
+      } catch {
+        /* a page without fetch still renders the panel */
+      }
+    }
+
+    async function api(path, body) {      const init = body
         ? {
             method: 'POST',
             credentials: 'same-origin',
@@ -353,11 +374,16 @@ window.__ModuleLoader__.load({
     }
 
     function DiagFooter(props) {
-      const { version, platform, roots, onCopy, copied } = props;
+      const { version, platform, roots, client, onCopy, copied } = props;
       return h(
         'div',
         { className: 'deck-foot' },
         h('span', { className: 'deck-note' }, 'v' + version + (platform ? ' · ' + platform : '')),
+        h(
+          'span',
+          { className: 'deck-note', title: client?.userAgent ?? '' },
+          client && client.loadedAt ? t('clientLoaded') + ' ' + client.loadedAt.slice(11, 19) + 'Z' : t('clientMissing'),
+        ),
         (roots ?? []).map((root) =>
           h(
             'span',
@@ -447,7 +473,7 @@ window.__ModuleLoader__.load({
     }
 
     function Panel() {
-      const [state, setState] = useState({ status: 'loading', error: null, skills: [], roots: [], totals: null, version: '', platform: '' });
+      const [state, setState] = useState({ status: 'loading', error: null, skills: [], roots: [], totals: null, version: '', platform: '', client: null });
       const [query, setQuery] = useState('');
       const [filter, setFilter] = useState('all');
       const [busy, setBusy] = useState('');
@@ -483,6 +509,7 @@ window.__ModuleLoader__.load({
             totals: payload.totals,
             version: payload.version ?? '',
             platform: payload.platform ?? '',
+            client: payload.client ?? null,
           });
         } catch (error) {
           setState({ status: 'error', error: error.message, skills: [], roots: [], totals: null });
@@ -492,6 +519,10 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         load();
       }, [load]);
+
+      useEffect(() => {
+        signal('rendered');
+      }, []);
 
       useEffect(
         () => () => {
@@ -652,6 +683,7 @@ window.__ModuleLoader__.load({
           lines.push('root ' + root.id + ': ' + count + ' — ' + root.path);
         }
         lines.push('totals: ' + JSON.stringify(state.totals));
+        lines.push('client: ' + JSON.stringify(state.client));
         try {
           await navigator.clipboard.writeText(lines.join('\n'));
           setCopied(true);
@@ -779,6 +811,7 @@ window.__ModuleLoader__.load({
               version: state.version,
               platform: state.platform,
               roots: rootsWithCounts,
+              client: state.client,
               onCopy: copyDiag,
               copied,
             })
@@ -882,6 +915,7 @@ window.__ModuleLoader__.load({
 
     function apply(ctx) {
       injectStyles();
+      signal('loaded');
       ctx.effect(
         () => () => {
           const tag = document.querySelector('style[data-plugin-css="' + NS + '/panel.css"]');

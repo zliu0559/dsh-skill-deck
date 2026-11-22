@@ -86,6 +86,7 @@ globalThis.fetch = async (url, init) => {
     profile = { ...profile, skills: [...profile.skills, created], totals: { ...profile.totals, skills: 2 } };
     return json({ ok: true, skill: created, revision: 'rev-4' });
   }
+  if (path === '/dsh-skill-deck/signal') return { ok: true, status: 200, json: async () => ({ ok: true }) };
   if (path === '/dsh-skill-deck/delete') return json({ ok: true, trashedTo: '/tmp/x' });
   throw new Error('unexpected request ' + path);
 };

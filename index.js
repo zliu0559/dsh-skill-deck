@@ -24,6 +24,16 @@ export const name = 'dsh-skill-deck';
 
 let cachedVersion;
 
+/** Signals sent by the browser half; they prove the client bundle really ran. */
+const clientSignals = { loadedAt: null, renderedAt: null, userAgent: null };
+
+function recordSignal(kind, request) {
+  const at = new Date().toISOString();
+  if (kind === 'loaded') clientSignals.loadedAt = at;
+  if (kind === 'rendered') clientSignals.renderedAt = at;
+  if (clientSignals.userAgent === null) clientSignals.userAgent = request.headers['user-agent'] ?? null;
+}
+
 function pluginVersion() {
   if (cachedVersion !== undefined) return cachedVersion;
   try {
@@ -163,7 +173,17 @@ export function apply(ctx) {
         version: pluginVersion(),
         platform: process.platform,
         node: process.versions.node,
+        client: clientSignals,
       });
+    });
+
+    route('/signal', async (request, response) => {
+      const payload = await readJson(request);
+      if (payload.kind !== 'loaded' && payload.kind !== 'rendered') {
+        throw Object.assign(new Error('kind must be "loaded" or "rendered"'), { status: 400 });
+      }
+      recordSignal(payload.kind, request);
+      sendJson(response, 200, { ok: true, client: clientSignals });
     });
 
     route('/create', async (request, response) => {
