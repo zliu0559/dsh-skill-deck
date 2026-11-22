@@ -49,7 +49,9 @@ window.__ModuleLoader__.load({
       editTitle: '编辑 SKILL.md',
       editHint: '整份文件原样保存，脚本和资源不受影响。',
       dirty: '有未保存的修改，确定关闭？',
-      conflict: '文件在磁盘上已被修改，请重新打开后再改。',
+      conflict: '文件在磁盘上已被修改，请重新加载后再改。',
+      conflictHint: '磁盘上的版本更新了。',
+      reload: '重新加载',
       saved: '已保存',
       toggled: '已更新',
       trashed: '已移入回收站',
@@ -95,7 +97,9 @@ window.__ModuleLoader__.load({
       editTitle: 'Edit SKILL.md',
       editHint: 'The whole file is saved as-is; scripts and assets are untouched.',
       dirty: 'You have unsaved changes. Close anyway?',
-      conflict: 'The file changed on disk. Reopen it before editing again.',
+      conflict: 'The file changed on disk. Reload it before editing again.',
+      conflictHint: 'A newer copy exists on disk.',
+      reload: 'Reload',
       saved: 'Saved',
       toggled: 'Updated',
       trashed: 'Moved to trash',
@@ -250,6 +254,67 @@ window.__ModuleLoader__.load({
       );
     }
 
+    function SkillRow(props) {
+      const { skill, busy, onToggle, onEdit, onReveal, onRemove } = props;
+      return h(
+        'li',
+        { className: 'deck-row' },
+        h(
+          'div',
+          null,
+          h(
+            'div',
+            { className: 'deck-name' },
+            skill.name,
+            skill.modelInvocable ? h(Badge, null, t('modelSurface')) : null,
+            skill.userInvocable ? h(Badge, { muted: true }, t('userSurface')) : null,
+            skill.valid ? null : h(Badge, { warn: true }, t('invalid')),
+          ),
+          h('div', { className: 'deck-desc' }, skill.description || t('invalid')),
+          h(
+            'div',
+            { className: 'deck-meta' },
+            h('span', null, skill.root),
+            h('span', null, skill.files + ' ' + t('files') + ' · ' + formatBytes(skill.bytes)),
+            skill.updatedAt ? h('span', null, skill.updatedAt.slice(0, 10)) : null,
+          ),
+        ),
+        h(
+          'div',
+          { className: 'deck-switches' },
+          h(SurfaceSwitch, {
+            on: skill.modelInvocable,
+            label: t('modelSurface'),
+            title: t('modelHint'),
+            disabled: busy === skill.name + ':model',
+            onClick: () => onToggle(skill, 'model', !skill.modelInvocable),
+          }),
+          h(SurfaceSwitch, {
+            on: skill.userInvocable,
+            label: t('userSurface'),
+            title: t('userHint'),
+            disabled: busy === skill.name + ':user',
+            onClick: () => onToggle(skill, 'user', !skill.userInvocable),
+          }),
+        ),
+        h(
+          'div',
+          { className: 'deck-actions' },
+          h(
+            'button',
+            {
+              className: 'deck-btn',
+              disabled: busy === skill.name + ':read',
+              onClick: () => onEdit(skill),
+            },
+            t('edit'),
+          ),
+          h('button', { className: 'deck-btn', onClick: () => onReveal(skill) }, t('reveal')),
+          h('button', { className: 'deck-btn danger', onClick: () => onRemove(skill) }, t('remove')),
+        ),
+      );
+    }
+
     function Panel() {
       const [state, setState] = useState({ status: 'loading', error: null, skills: [], roots: [], totals: null });
       const [query, setQuery] = useState('');
@@ -258,6 +323,7 @@ window.__ModuleLoader__.load({
       const [editor, setEditor] = useState(null);
       const [draft, setDraft] = useState('');
       const [saving, setSaving] = useState(false);
+      const [conflict, setConflict] = useState(false);
       const [confirming, setConfirming] = useState(null);
       const [confirmText, setConfirmText] = useState('');
       const [toast, setToast] = useState(null);
@@ -321,6 +387,7 @@ window.__ModuleLoader__.load({
             const payload = await api('/read', { name: skill.name });
             setEditor({ name: skill.name, revision: payload.revision, path: skill.path, base: payload.content });
             setDraft(payload.content);
+            setConflict(false);
           } catch (error) {
             notify(error.message, 'error');
           } finally {
@@ -330,12 +397,28 @@ window.__ModuleLoader__.load({
         [notify],
       );
 
+      const reloadEditor = useCallback(async () => {
+        if (!editor) return;
+        setBusy(editor.name + ':read');
+        try {
+          const payload = await api('/read', { name: editor.name });
+          setEditor({ ...editor, revision: payload.revision, base: payload.content });
+          setDraft(payload.content);
+          setConflict(false);
+        } catch (error) {
+          notify(error.message, 'error');
+        } finally {
+          setBusy('');
+        }
+      }, [editor, notify]);
+
       const closeEditor = useCallback(() => {
         if (saving) return;
         const dirty = editor && draft !== editor.base;
         if (dirty && !window.confirm(t('dirty'))) return;
         setEditor(null);
         setDraft('');
+        setConflict(false);
       }, [draft, editor, saving]);
 
       const saveEditor = useCallback(async () => {
@@ -348,8 +431,10 @@ window.__ModuleLoader__.load({
           setDraft('');
           notify(t('saved'));
         } catch (error) {
-          if (error.status === 409) notify(t('conflict'), 'error');
-          else notify(error.message, 'error');
+          if (error.status === 409) {
+            setConflict(true);
+            notify(t('conflict'), 'error');
+          } else notify(error.message, 'error');
         } finally {
           setSaving(false);
         }
@@ -401,73 +486,18 @@ window.__ModuleLoader__.load({
       }, [filter, query, state.skills]);
 
       const rows = visible.map((skill) =>
-        h(
-          'li',
-          { className: 'deck-row', key: skill.name },
-          h(
-            'div',
-            null,
-            h(
-              'div',
-              { className: 'deck-name' },
-              skill.name,
-              skill.modelInvocable ? h(Badge, null, t('modelSurface')) : null,
-              skill.userInvocable ? h(Badge, { muted: true }, t('userSurface')) : null,
-              skill.valid ? null : h(Badge, { warn: true }, t('invalid')),
-            ),
-            h('div', { className: 'deck-desc' }, skill.description || t('invalid')),
-            h(
-              'div',
-              { className: 'deck-meta' },
-              h('span', null, skill.root),
-              h('span', null, skill.files + ' ' + t('files') + ' · ' + formatBytes(skill.bytes)),
-              skill.updatedAt ? h('span', null, skill.updatedAt.slice(0, 10)) : null,
-            ),
-          ),
-          h(
-            'div',
-            { className: 'deck-switches' },
-            h(SurfaceSwitch, {
-              on: skill.modelInvocable,
-              label: t('modelSurface'),
-              title: t('modelHint'),
-              disabled: busy === skill.name + ':model',
-              onClick: () => toggle(skill, 'model', !skill.modelInvocable),
-            }),
-            h(SurfaceSwitch, {
-              on: skill.userInvocable,
-              label: t('userSurface'),
-              title: t('userHint'),
-              disabled: busy === skill.name + ':user',
-              onClick: () => toggle(skill, 'user', !skill.userInvocable),
-            }),
-          ),
-          h(
-            'div',
-            { className: 'deck-actions' },
-            h(
-              'button',
-              {
-                className: 'deck-btn',
-                disabled: busy === skill.name + ':read',
-                onClick: () => openEditor(skill),
-              },
-              t('edit'),
-            ),
-            h('button', { className: 'deck-btn', onClick: () => reveal(skill) }, t('reveal')),
-            h(
-              'button',
-              {
-                className: 'deck-btn danger',
-                onClick: () => {
-                  setConfirming(skill);
-                  setConfirmText('');
-                },
-              },
-              t('remove'),
-            ),
-          ),
-        ),
+        h(SkillRow, {
+          key: skill.name,
+          skill,
+          busy,
+          onToggle: toggle,
+          onEdit: openEditor,
+          onReveal: reveal,
+          onRemove: (target) => {
+            setConfirming(target);
+            setConfirmText('');
+          },
+        }),
       );
 
       const body =
@@ -546,6 +576,7 @@ window.__ModuleLoader__.load({
                   },
                 }),
                 h('p', { className: 'deck-note' }, t('editHint')),
+                conflict ? h('p', { className: 'deck-error', style: { marginTop: 10 } }, t('conflict')) : null,
               ),
               h(
                 'div',
@@ -554,10 +585,13 @@ window.__ModuleLoader__.load({
                 h(
                   'div',
                   { style: { display: 'flex', gap: 8 } },
+                  conflict
+                    ? h('button', { className: 'deck-btn', onClick: reloadEditor }, t('reload'))
+                    : null,
                   h('button', { className: 'deck-btn', onClick: closeEditor }, t('cancel')),
                   h(
                     'button',
-                    { className: 'deck-btn primary', onClick: saveEditor, disabled: saving },
+                    { className: 'deck-btn primary', onClick: saveEditor, disabled: saving || conflict },
                     saving ? t('saving') : t('save'),
                   ),
                 ),
@@ -629,6 +663,6 @@ window.__ModuleLoader__.load({
       );
     }
 
-    return { name: NS, inject: ['slots'], apply };
+    return { name: NS, inject: ['slots'], apply, components: { Panel, SkillRow } };
   },
 });

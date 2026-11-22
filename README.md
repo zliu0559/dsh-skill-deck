@@ -67,8 +67,8 @@ Removal moves the bundle to `$DSH_HOME/skills-trash/<timestamp>-<name>/`; flat `
 No build step: plain ESM on both halves.
 
 ```sh
-node test/frontmatter.test.mjs
-node test/store.test.mjs
+npm install   # React is a devDependency, used only by the render test
+npm test
 ```
 
 `index.js` is the Host half (routes under `/dsh-skill-deck/*`), `client.js` is the browser module registered through `window.__ModuleLoader__`, and `lib/` holds the filesystem and frontmatter logic shared by the tests.

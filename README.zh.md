@@ -67,8 +67,8 @@ git clone https://github.com/zliu0559/dsh-skill-deck.git
 两半都是纯 ESM，无需构建。
 
 ```sh
-node test/frontmatter.test.mjs
-node test/store.test.mjs
+npm install   # React 只是 devDependency，渲染测试用
+npm test
 ```
 
 `index.js` 是 Host 半（挂在 `/dsh-skill-deck/*` 下的路由），`client.js` 是通过 `window.__ModuleLoader__` 注册的浏览器模块，`lib/` 放文件系统与 frontmatter 逻辑，测试直接复用。
