@@ -68,6 +68,37 @@ async function readJson(request) {
 }
 
 /**
+ * These routes are reachable without the app's login cookie, so they defend
+ * themselves: same-origin only, JSON content type for writes, and a cross-site
+ * fetch is refused outright.
+ * @param {import('node:http').IncomingMessage} request
+ */
+function assertLocalCaller(request) {
+  const site = request.headers['sec-fetch-site'];
+  if (site && site !== 'same-origin' && site !== 'none') {
+    throw Object.assign(new Error('cross-site requests are not allowed'), { status: 403 });
+  }
+  const origin = request.headers.origin;
+  if (origin) {
+    let originHost = null;
+    try {
+      originHost = new URL(origin).host;
+    } catch {
+      originHost = null;
+    }
+    if (!originHost || originHost !== request.headers.host) {
+      throw Object.assign(new Error('origin does not match this host'), { status: 403 });
+    }
+  }
+  if (request.method === 'POST') {
+    const contentType = request.headers['content-type'] || '';
+    if (!contentType.toLowerCase().includes('application/json')) {
+      throw Object.assign(new Error('writes must be application/json'), { status: 415 });
+    }
+  }
+}
+
+/**
  * @param {import('@deepseek-ai/cordis').Context} ctx
  */
 export function apply(ctx) {
@@ -89,6 +120,12 @@ export function apply(ctx) {
           kind: 'exact',
           path: ROUTE_BASE + path,
           handler: (request, response) => {
+            try {
+              assertLocalCaller(request);
+            } catch (error) {
+              fail(response, error);
+              return;
+            }
             Promise.resolve(handler(request, response)).catch((error) => fail(response, error));
           },
         }),

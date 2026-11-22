@@ -35,7 +35,7 @@
     "dsh": ">=0.2.0-0 <0.3.0-0"
   },
   "scripts": {
-    "test": "node test/frontmatter.test.mjs && node test/store.test.mjs"
+    "test": "node test/frontmatter.test.mjs && node test/store.test.mjs && node test/host.test.mjs && node test/client.test.mjs"
   },
   "keywords": [
     "dsh",
