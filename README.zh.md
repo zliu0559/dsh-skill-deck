@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/zliu0559/dsh-skill-deck/actions/workflows/ci.yml/badge.svg)](https://github.com/zliu0559/dsh-skill-deck/actions/workflows/ci.yml)
 
-一个 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 插件，在左侧边栏加一页 **技能**（同时保留 **设置 → 技能**）：浏览用户级技能目录下的全部技能，一键启停两种调用方式，直接编辑 `SKILL.md`，给技能标注分类和作者，打开技能目录，或把技能移入回收站。同一份数据可以切换成列表、分组卡片墙或 treemap 地图。
+一个 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 插件，在左侧边栏加一页 **技能**（同时保留 **设置 → 技能**）：浏览用户级技能目录下的全部技能，一键启停两种调用方式，直接编辑 `SKILL.md`，给技能标注分类、作者和系列，打开技能目录，或把技能移入回收站。同一份数据可以切换成列表、分组卡片墙或系列看板（地图）。
 
 [English](README.md) | 中文
 
@@ -11,8 +11,9 @@
 DSH 从磁盘发现技能并热加载，但改动只能手动编辑文件。技能面板把这些文件放进一个克制的小界面：
 
 - **从侧栏直接打开**：**技能** 入口排在自带页面之后，设置 → 技能 也照常可用。
-- **一份数据，三种视图**：列表适合密度，卡片墙按分类、作者或来源分组，地图用 treemap 让块面积反映技能大小。视图和分组方式会被记住。
-- **标注不碰 `SKILL.md`**：分类和作者保存在插件自己的文件里；frontmatter 里已有的作者会自动导入，分类建议来自已经在用的值。
+- **一份数据，三种视图**：列表适合密度，卡片墙按分类、作者或来源分组，地图则是**系列看板**：每个系列一个模块，拖动技能即可重新归类（失败会回滚，成功可撤销），一次请求就能重命名整个系列，并可在应用前审查推断出的系列建议。视图和分组方式会被记住。
+- **标注不碰 `SKILL.md`**：分类、作者和系列保存在插件自己的文件里；frontmatter 里已有的作者会自动导入，分类和系列建议来自已经在用的值；系列只能手动维护。
+- **不拖动也能整理**：桌面端每个技能块都有「移到系列」操作，触摸详情条也保留同名操作，键盘和触摸用户同样能整理看板。
 - **看清到底加载了什么**：名称、描述、启停了哪些调用方式、文件数、大小、最后修改时间。
 - **改开关不用碰 YAML**：「模型」写 `disable-model-invocation`，「命令」写 `user-invocable`，文件其余字节原样保留。
 - **编辑整份文档**：`SKILL.md` 全文本编辑，原子写入，并带修订值校验，避免覆盖外部改动。
@@ -60,7 +61,7 @@ git clone https://github.com/zliu0559/dsh-skill-deck.git
 | `$DSH_AGENTS_HOME/skills`（默认 `~/.agents/skills`） | 读 + 写 |
 | `$DSH_HOME/skill-deck/annotations.json`（默认 `~/.dsh/skill-deck/annotations.json`） | 读 + 写（只存插件自己的标注） |
 
-标注只写入这个插件自己的 JSON 文件，打标签不会改写 `SKILL.md`。文件不存在时视为没有标注。文件损坏或来自更新版本时，界面会忽略它，并在下一次写入前把它复制成同目录的 `annotations.corrupt-<时间戳>.json`，避免字节被静默丢弃。
+标注只写入这个插件自己的 JSON 文件，打标签不会改写 `SKILL.md`。当前 schema 是版本 2；版本 1 的文件会在读取时迁移，并在下一次保存时写成版本 2。文件不存在时视为没有标注。文件损坏或来自更新版本时，界面会忽略它，并在下一次写入前把它复制成同目录的 `annotations.corrupt-<时间戳>.json`，避免字节被静默丢弃。
 
 项目级目录（`<repo>/.dsh/skills`、`<repo>/.agents/skills`）故意不在范围内：它们属于具体工作区，不属于 harness profile。
 
@@ -82,7 +83,7 @@ npm install   # React 只是 devDependency，渲染测试用
 npm test
 ```
 
-`index.js` 是 Host 半（挂在 `/dsh-skill-deck/*` 下的路由），`client.js` 是通过 `window.__ModuleLoader__` 注册的浏览器模块（列表、卡片墙和地图渲染器都在同一个无构建文件里），`lib/` 放文件系统、frontmatter 与标注逻辑，测试直接复用。
+`index.js` 是 Host 半（挂在 `/dsh-skill-deck/*` 下的路由），`client.js` 是通过 `window.__ModuleLoader__` 注册的浏览器模块（列表、卡片墙和系列看板渲染器都在同一个无构建文件里），`lib/` 放文件系统、frontmatter 与标注逻辑，测试直接复用。
 
 Host API 是同源 JSON，通过 `webServer.register` 挂载；每个写操作都会先按名称重新发现技能再定位路径，所以请求无法指向受管目录之外的文件。
 
