@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/zliu0559/dsh-skill-deck/actions/workflows/ci.yml/badge.svg)](https://github.com/zliu0559/dsh-skill-deck/actions/workflows/ci.yml)
 
-A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin that adds a **Skills** page to the left sidebar — and keeps the **Settings → Skills** section: browse every skill under your DSH user roots, switch its two invocation surfaces on or off, edit its `SKILL.md`, annotate it with a category and an author, open its folder, or move it to the trash. The same deck can be shown as a list, a grouped card wall, or a treemap map.
+A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin that adds a **Skills** page to the left sidebar — and keeps the **Settings → Skills** section: browse every skill under your DSH user roots, switch its two invocation surfaces on or off, edit its `SKILL.md`, annotate it with a category, an author, and a series, open its folder, or move it to the trash. The same deck can be shown as a list, a grouped card wall, or a series board (the Map).
 
 English | [中文](README.zh.md)
 
@@ -11,8 +11,9 @@ English | [中文](README.zh.md)
 DSH discovers skills from disk and hot-reloads them, but the only way to change one is to edit files by hand. Skill Deck puts the same files behind a small, honest UI:
 
 - **Open it from the sidebar** — a **Skills** entry sits after the shipped pages, while Settings → Skills keeps working.
-- **Three views over one deck** — List for density, Cards grouped by category, author, or root, and Map for a treemap whose block area follows skill size. The chosen view and grouping are remembered across visits.
-- **Annotate without touching `SKILL.md`** — category and author are stored in a plugin-owned file; frontmatter authors are imported automatically, and category suggestions come from values already in use.
+- **Three views over one deck** — List for density, Cards grouped by category, author, or root, and a Map that is a **series board**: one module per series, drag a tile to reassign it (with rollback and undo), rename a whole series in one request, and review inferred source suggestions before applying them. The chosen view and grouping are remembered across visits.
+- **Annotate without touching `SKILL.md`** — category, author, and series are stored in a plugin-owned file; frontmatter authors are imported automatically, category and series suggestions come from values already in use, and series are manual-only.
+- **Organize without dragging** — desktop tiles expose a **Move to series** action and the touch details strip has its own, so keyboard and touch users can arrange the board too.
 - **See what is actually loaded** — name, description, which surfaces are enabled, file count, size, last change.
 - **Toggle without editing YAML** — "Model" writes `disable-model-invocation`, "Slash" writes `user-invocable`; every other byte of the file is preserved.
 - **Edit the whole document** — `SKILL.md` opens in a full-text editor and is saved atomically, with a revision guard against overwriting an external change.
@@ -63,7 +64,7 @@ Install the directory through **Settings → Plugins → Add plugin**, or `dsh p
 | `$DSH_AGENTS_HOME/skills` (default `~/.agents/skills`) | read + write |
 | `$DSH_HOME/skill-deck/annotations.json` (default `~/.dsh/skill-deck/annotations.json`) | read + write (plugin-owned annotations only) |
 
-Annotations are written only to that plugin-owned JSON file; tagging never rewrites `SKILL.md`. A missing file reads as no annotations. A malformed file or one written by a newer version is ignored for display and copied to an `annotations.corrupt-<timestamp>.json` sibling before the next write, so its bytes are not silently lost.
+Annotations are written only to that plugin-owned JSON file; tagging never rewrites `SKILL.md`. The current schema is version 2; a version 1 file is migrated on read and rewritten as version 2 on the next save. A missing file reads as no annotations. A malformed file or one written by a newer version is ignored for display and copied to an `annotations.corrupt-<timestamp>.json` sibling before the next write, so its bytes are not silently lost.
 
 Project-level roots (`<repo>/.dsh/skills`, `<repo>/.agents/skills`) are deliberately out of scope: they belong to a workspace, not to the harness profile.
 
@@ -91,7 +92,7 @@ npm test
 typing, toggling, saving, creating, grouping and the map are exercised as
 behaviour rather than as markup.
 
-`index.js` is the Host half (routes under `/dsh-skill-deck/*`), `client.js` is the browser module registered through `window.__ModuleLoader__` (the list, card-wall and map renderers live in that same no-build file), and `lib/` holds the filesystem, frontmatter and annotation logic shared by the tests.
+`index.js` is the Host half (routes under `/dsh-skill-deck/*`), `client.js` is the browser module registered through `window.__ModuleLoader__` (the list, card-wall and series-board renderers live in that same no-build file), and `lib/` holds the filesystem, frontmatter and annotation logic shared by the tests.
 
 The Host API is same-origin JSON, mounted through `webServer.register`, and every mutating request re-discovers the skill by name before touching a path, so a request cannot address a file outside the managed roots.
 

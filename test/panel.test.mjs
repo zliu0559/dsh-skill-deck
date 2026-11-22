@@ -60,7 +60,6 @@ let profile = {
       series: '',
       manualCategory: '',
       manualAuthor: '',
-      manualSeries: '',
     },
     {
       name: 'docs-skill',
@@ -82,7 +81,6 @@ let profile = {
       series: 'Docs',
       manualCategory: 'documentation',
       manualAuthor: '',
-      manualSeries: 'Docs',
     },
     {
       name: 'lint-skill',
@@ -104,7 +102,6 @@ let profile = {
       series: 'docs',
       manualCategory: 'Documentation',
       manualAuthor: '',
-      manualSeries: 'docs',
     },
     {
       name: 'review-skill',
@@ -126,7 +123,6 @@ let profile = {
       series: 'Reviewers',
       manualCategory: 'review',
       manualAuthor: 'Dex Horthy',
-      manualSeries: 'Reviewers',
     },
   ],
   totals: { skills: 4, modelInvocable: 3, userInvocable: 2, invalid: 1 },
@@ -143,6 +139,8 @@ const calls = [];
 // and hand the next annotate call a failure to observe the rollback.
 let annotateGate = null;
 let annotateFailure = null;
+// How many annotate calls may succeed before the injected failure fires.
+let annotateFailAfter = 0;
 globalThis.fetch = async (url, init) => {
   const path = String(url).replace('http://127.0.0.1:52603', '');
   const body = init?.body ? JSON.parse(init.body) : null;
@@ -180,9 +178,12 @@ globalThis.fetch = async (url, init) => {
   }
   if (path === '/dsh-skill-deck/annotate') {
     if (annotateGate) await annotateGate.promise;
-    if (annotateFailure) {
+    if (annotateFailure && annotateFailAfter > 0) {
+      annotateFailAfter -= 1;
+    } else if (annotateFailure) {
       const failure = annotateFailure;
       annotateFailure = null;
+      annotateFailAfter = 0;
       return {
         ok: false,
         status: failure.status ?? 500,
@@ -201,14 +202,12 @@ globalThis.fetch = async (url, init) => {
     const series = typeof body.series === 'string' ? body.series.trim() : undefined;
     const previousSeries =
       typeof body.previousSeries === 'string' ? body.previousSeries.trim().toLowerCase() : '';
+    const seriesKey = (value) => String(value ?? '').trim().toLowerCase();
     profile = {
       ...profile,
       skills: profile.skills.map((skill) => {
-        if (
-          previousSeries &&
-          String(skill.manualSeries ?? '').trim().toLowerCase() === previousSeries
-        ) {
-          return { ...skill, series: series ?? '', manualSeries: series ?? '' };
+        if (previousSeries && seriesKey(skill.series) === previousSeries) {
+          return { ...skill, series: series ?? '' };
         }
         if (skill.name !== body.name) return skill;
         return {
@@ -219,7 +218,7 @@ globalThis.fetch = async (url, init) => {
           ...(author === undefined
             ? {}
             : { author: author || fallbackAuthors[skill.name] || 'Unknown', manualAuthor: author }),
-          ...(series === undefined ? {} : { series, manualSeries: series }),
+          ...(series === undefined ? {} : { series }),
         };
       }),
     };
@@ -336,8 +335,14 @@ function mapModules(scope = container) {
 }
 
 function mapModuleFor(title, scope = container) {
-  return [...scope.querySelectorAll('.deck-map-module')].find(
+  const modules = [...scope.querySelectorAll('.deck-map-module')];
+  const byTitle = modules.find(
     (module) => module.querySelector('.deck-map-module-title')?.textContent?.trim() === title,
+  );
+  if (byTitle) return byTitle;
+  // The empty unassigned module is only a drop zone, so it has no title.
+  return modules.find(
+    (module) => module.dataset.unassigned === 'true' && title === 'Unassigned',
   );
 }
 
@@ -461,6 +466,12 @@ function gateAnnotate() {
     annotateGate = null;
     release();
   };
+}
+
+/** Let a few annotate writes succeed, then fail the next one. */
+function failAnnotateAfter(successes, failure = { status: 500, message: 'write failed' }) {
+  annotateFailure = failure;
+  annotateFailAfter = successes;
 }
 
 /**
@@ -1038,7 +1049,7 @@ test('the Map always groups by series, hides the group-by selector, and shows mo
   assert.equal(buttonByText('Cards')?.getAttribute('aria-pressed'), 'false');
   assert.equal(container.querySelectorAll('.deck-row').length, 0, 'list is replaced by the map');
   assert.equal(container.querySelectorAll('.deck-card').length, 0, 'cards are replaced by the map');
-  assert.ok(!container.querySelector('.deck-map-canvas'), 'the treemap canvas is gone');
+  assert.ok(!container.querySelector('.deck-map-canvas'), 'the series board has no treemap canvas');
   assert.ok(
     container.querySelector('select.deck-groupby') === null,
     'the group-by selector is hidden on the Map',
@@ -1102,7 +1113,6 @@ test('series modules order by count then name, unassigned stays last, and tiles 
         category: 'shared',
         manualCategory: 'shared',
         series: 'Shared',
-        manualSeries: 'Shared',
       },
       {
         ...baseProfile.skills[1],
@@ -1110,7 +1120,6 @@ test('series modules order by count then name, unassigned stays last, and tiles 
         category: 'shared',
         manualCategory: 'shared',
         series: 'shared',
-        manualSeries: 'shared',
       },
       {
         ...baseProfile.skills[1],
@@ -1118,7 +1127,6 @@ test('series modules order by count then name, unassigned stays last, and tiles 
         category: 'alpha-cat',
         manualCategory: 'alpha-cat',
         series: 'alpha-cat',
-        manualSeries: 'alpha-cat',
       },
       {
         ...baseProfile.skills[1],
@@ -1126,7 +1134,6 @@ test('series modules order by count then name, unassigned stays last, and tiles 
         category: 'Beta',
         manualCategory: 'Beta',
         series: 'Beta',
-        manualSeries: 'Beta',
       },
       {
         ...baseProfile.skills[0],
@@ -1134,7 +1141,6 @@ test('series modules order by count then name, unassigned stays last, and tiles 
         category: 'Uncategorized',
         manualCategory: '',
         series: '',
-        manualSeries: '',
       },
     ],
     totals: { ...baseProfile.totals, skills: 5 },
@@ -1168,7 +1174,7 @@ test('the unassigned module appears last and collapses to a slim drop zone when 
   const assigned = JSON.parse(JSON.stringify(baseProfile));
   assigned.skills = assigned.skills.map((skill) =>
     skill.name === 'demo'
-      ? { ...skill, series: 'Loose Ends', manualSeries: 'Loose Ends' }
+      ? { ...skill, series: 'Loose Ends' }
       : skill,
   );
   profile = assigned;
@@ -1181,7 +1187,7 @@ test('the unassigned module appears last and collapses to a slim drop zone when 
       ['Docs', '2', false, false],
       ['Loose Ends', '1', false, false],
       ['Reviewers', '1', false, false],
-      ['Unassigned', '0', true, true],
+      [undefined, undefined, true, true],
     ],
   );
   const empty = mapModuleFor('Unassigned');
@@ -1189,6 +1195,11 @@ test('the unassigned module appears last and collapses to a slim drop zone when 
   assert.ok(empty.classList.contains('is-empty'));
   assert.equal(empty.querySelectorAll('.deck-map-tile').length, 0, 'the empty module has no tiles');
   assert.ok(empty.querySelector('.deck-map-grid') === null, 'the empty module collapses its grid');
+  assert.equal(
+    empty.querySelector('.deck-map-module-head'),
+    null,
+    'the empty module has no header: no title, count or status to read',
+  );
   assert.match(empty.querySelector('.deck-map-dropzone')?.textContent ?? '', /Drag a skill here/);
   assert.equal(buttonInScope(empty, 'Rename'), undefined, 'Unassigned is not a renameable series');
 
@@ -1240,6 +1251,52 @@ test('renaming a series from its module header updates every member in one reque
   await click(buttonByText('Refresh'));
 });
 
+test('renaming onto an existing series name requires explicit merge confirmation', async () => {
+  profile = JSON.parse(JSON.stringify(baseProfile));
+  calls.length = 0;
+  await click(buttonByText('Refresh'));
+
+  await click(buttonInScope(mapModuleFor('Docs'), 'Rename'));
+  const dialog = container.querySelector('.deck-modal');
+  const input = dialog.querySelector('input');
+  await act(async () => {
+    setValue(input, 'reviewers');
+  });
+  await settle();
+
+  assert.match(dialog.textContent, /merges/i, 'the dialog explains that the rename merges both series');
+  const submit = buttonInScope(dialog, 'Rename');
+  assert.equal(submit.disabled, true, 'the rename cannot proceed without the merge confirmation');
+  const merge = dialog.querySelector('input[type="checkbox"]');
+  assert.ok(merge, 'a merge confirmation is offered');
+  assert.equal(merge.checked, false, 'the merge confirmation starts unchecked');
+
+  await click(merge);
+  assert.equal(merge.checked, true);
+  assert.equal(submit.disabled, false, 'confirming enables the rename');
+
+  calls.length = 0;
+  await click(submit);
+  assert.deepEqual(calls.find((call) => call.path === '/dsh-skill-deck/annotate')?.body, {
+    name: 'docs-skill',
+    previousSeries: 'Docs',
+    series: 'reviewers',
+    confirmMerge: true,
+  });
+  assert.equal(container.querySelector('.deck-modal'), null, 'the dialog closes after the merge');
+  assert.deepEqual(
+    mapModules().map((module) => [module.title, module.tiles]),
+    [
+      ['reviewers', ['docs-skill', 'lint-skill', 'review-skill']],
+      ['Unassigned', ['demo']],
+    ],
+    'both series coalesce into one module',
+  );
+
+  profile = JSON.parse(JSON.stringify(baseProfile));
+  await click(buttonByText('Refresh'));
+});
+
 test('map tiles encode invalid > disabled > enabled status with tints, dots and visible counts', async () => {
   profile = {
     ...JSON.parse(JSON.stringify(baseProfile)),
@@ -1250,7 +1307,6 @@ test('map tiles encode invalid > disabled > enabled status with tints, dots and 
         category: 'status',
         manualCategory: 'status',
         series: 'status',
-        manualSeries: 'status',
         valid: false,
         error: 'bad frontmatter',
         modelInvocable: false,
@@ -1262,7 +1318,6 @@ test('map tiles encode invalid > disabled > enabled status with tints, dots and 
         category: 'status',
         manualCategory: 'status',
         series: 'status',
-        manualSeries: 'status',
         valid: false,
         error: 'bad frontmatter',
         modelInvocable: true,
@@ -1274,7 +1329,6 @@ test('map tiles encode invalid > disabled > enabled status with tints, dots and 
         category: 'status',
         manualCategory: 'status',
         series: 'status',
-        manualSeries: 'status',
         valid: true,
         error: null,
         modelInvocable: false,
@@ -1286,7 +1340,6 @@ test('map tiles encode invalid > disabled > enabled status with tints, dots and 
         category: 'status',
         manualCategory: 'status',
         series: 'status',
-        manualSeries: 'status',
         valid: true,
         error: null,
         modelInvocable: true,
@@ -1369,7 +1422,7 @@ test('search and the status filter narrow series modules and the legend before g
     mapModules().map((module) => [module.title, module.count, module.tiles, module.empty]),
     [
       ['Reviewers', '1', ['review-skill'], false],
-      ['Unassigned', '0', [], true],
+      [undefined, undefined, [], true],
     ],
     'the empty unassigned drop zone remains while the visible module shrinks',
   );
@@ -1418,15 +1471,22 @@ test('a desktop tile click opens the editor and the map exposes no destructive a
   for (const button of mapButtons) {
     assert.ok(
       button.classList.contains('deck-map-tile') ||
+        button.classList.contains('deck-map-tile-action') ||
         button.classList.contains('deck-map-rename') ||
         button.classList.contains('deck-map-suggest'),
-      'the Map only exposes tiles, series rename and Suggest series actions: ' + button.textContent,
+      'the Map only exposes tiles, Move to series, series rename and Suggest series actions: ' +
+        button.textContent,
     );
   }
   assert.equal(
     container.querySelectorAll('.deck-map-module .deck-map-rename').length,
     2,
     'each named series module has one rename action',
+  );
+  assert.equal(
+    container.querySelectorAll('.deck-map-tile-action').length,
+    tiles.length,
+    'every desktop tile has a keyboard-reachable Move to series action',
   );
   assert.equal(container.querySelector('.deck-map .deck-btn.danger'), null, 'no destructive control');
   assert.equal(container.querySelector('.deck-map-strip'), null, 'no details strip on desktop');
@@ -1443,6 +1503,45 @@ test('a desktop tile click opens the editor and the map exposes no destructive a
   assert.ok(container.querySelector('textarea'), 'editor opened from the map');
   await click(buttonByText('Cancel'));
   assert.equal(container.querySelector('textarea'), null, 'editor closed');
+});
+
+test('a desktop map tile offers a keyboard-reachable Move to series action', async () => {
+  profile = JSON.parse(JSON.stringify(baseProfile));
+  calls.length = 0;
+  await click(buttonByText('Refresh'));
+  await ensureMapView();
+
+  const tile = mapTileFor('demo');
+  const action = tile.parentElement.querySelector('.deck-map-tile-action');
+  assert.ok(action, 'the tile has a sibling Move to series action');
+  assert.equal(action.tagName, 'BUTTON');
+  assert.equal(action.textContent.trim(), 'Move to series');
+  assert.match(action.getAttribute('aria-label') || '', /demo/);
+  await focusNode(action);
+  assert.equal(document.activeElement, action, 'the action is keyboard reachable');
+
+  calls.length = 0;
+  await click(action);
+  assert.equal(container.querySelector('textarea'), null, 'the action does not open the editor');
+  assert.ok(!calls.some((call) => call.path === '/dsh-skill-deck/read'), 'the action reads no file');
+  const dialog = container.querySelector('.deck-modal');
+  assert.ok(dialog, 'the action opens the annotation dialog');
+  const inputs = [...dialog.querySelectorAll('input')];
+  assert.equal(inputs.length, 3, 'the dialog keeps the category, author and series fields');
+  await act(async () => {
+    setValue(inputs[2], 'Docs');
+  });
+  await settle();
+  await click(buttonInScope(dialog, 'Save tags'));
+  assert.deepEqual(calls.find((call) => call.path === '/dsh-skill-deck/annotate')?.body, {
+    name: 'demo',
+    category: '',
+    author: '',
+    series: 'Docs',
+  });
+
+  profile = JSON.parse(JSON.stringify(baseProfile));
+  await click(buttonByText('Refresh'));
 });
 
 test('the map overlay shows measured details on hover and focus, flipping and clamping', async () => {
@@ -1712,9 +1811,9 @@ test('dragging a tile onto a series module moves it optimistically and offers un
     [
       ['Docs', '3', ['demo', 'docs-skill', 'lint-skill']],
       ['Reviewers', '1', ['review-skill']],
-      ['Unassigned', '0', []],
+      [undefined, undefined, []],
     ],
-    'the board updates before the request resolves',
+    'the board updates before the request resolves; the empty unassigned module is a slim drop zone',
   );
   release();
   await settle();
@@ -1835,7 +1934,7 @@ test('the new-series drop zone opens a name dialog and creates or reuses a serie
       ['Docs', ['docs-skill', 'lint-skill']],
       ['Fresh Series', ['demo']],
       ['Reviewers', ['review-skill']],
-      ['Unassigned', []],
+      [undefined, []],
     ],
     'the dropped skill created and joined the new series',
   );
@@ -1862,7 +1961,7 @@ test('the new-series drop zone opens a name dialog and creates or reuses a serie
     [
       ['Docs', ['docs-skill', 'lint-skill', 'review-skill']],
       ['Fresh Series', ['demo']],
-      ['Unassigned', []],
+      [undefined, []],
     ],
     'the existing series absorbed the skill',
   );
@@ -2059,7 +2158,7 @@ test('the touch strip Move to series action and the keyboard path reach the anno
       [
         ['Docs', ['demo', 'docs-skill', 'lint-skill']],
         ['Reviewers', ['review-skill']],
-        ['Unassigned', []],
+        [undefined, []],
       ],
       'the non-drag path moves the skill without a drag',
     );
@@ -2084,8 +2183,6 @@ const suggestionProfile = () => ({
       author: 'Unknown',
       manualAuthor: '',
       series: '',
-      manualSeries: '',
-      authorSource: null,
     },
     {
       ...baseProfile.skills[0],
@@ -2094,8 +2191,6 @@ const suggestionProfile = () => ({
       author: '花叔',
       manualAuthor: '',
       series: '',
-      manualSeries: '',
-      authorSource: 'metadata.author',
     },
     {
       ...baseProfile.skills[0],
@@ -2104,8 +2199,6 @@ const suggestionProfile = () => ({
       author: 'Dex Horthy',
       manualAuthor: '',
       series: '',
-      manualSeries: '',
-      authorSource: 'metadata.credits.author',
     },
     {
       ...baseProfile.skills[0],
@@ -2114,18 +2207,16 @@ const suggestionProfile = () => ({
       author: 'Unknown',
       manualAuthor: '',
       series: 'Manual',
-      manualSeries: 'Manual',
-      authorSource: null,
     },
     {
       ...baseProfile.skills[0],
       name: 'writing-for-agents',
       description: 'Write for agents.',
-      author: 'Unknown',
+      // A frontmatter author that is not one of the explicit known sources:
+      // the old author-source heuristic would have misgrouped this as huashu.
+      author: '花叔',
       manualAuthor: '',
       series: '',
-      manualSeries: '',
-      authorSource: null,
     },
   ],
   totals: { skills: 5, modelInvocable: 5, userInvocable: 5, invalid: 0 },
@@ -2133,7 +2224,7 @@ const suggestionProfile = () => ({
 
 function suggestionGroups(scope = container) {
   return [...scope.querySelectorAll('.deck-suggest-group')].map((group) => ({
-    module: group.dataset.module,
+    source: group.dataset.source,
     name: group.querySelector('.deck-suggest-name')?.value,
     skills: [...group.querySelectorAll('.deck-suggest-row')].map((row) => row.dataset.skill),
   }));
@@ -2152,16 +2243,26 @@ test('the Map offers an inferred Suggest series review with editable modules and
   const dialog = container.querySelector('.deck-modal');
   assert.ok(dialog, 'the suggestion review opens as a dialog');
   assert.match(dialog.textContent, /Inferred/, 'the dialog labels the grouping as inferred');
-  assert.match(dialog.textContent, /inferred from frontmatter/i, 'the hint explains the inference');
+  assert.match(dialog.textContent, /inferred/i, 'the hint explains the inference');
 
   assert.deepEqual(
     suggestionGroups(dialog),
     [
-      { module: 'huashu', name: 'huashu', skills: ['huashu-art-motion'] },
-      { module: 'humanlayer', name: 'Humanlayer', skills: ['pr'] },
-      { module: 'matt-pocock', name: 'Matt Pocock', skills: ['ask-matt', 'writing-for-agents'] },
+      { source: 'huashu', name: 'huashu', skills: ['huashu-art-motion'] },
+      { source: 'humanlayer', name: 'Humanlayer', skills: ['pr'] },
+      {
+        source: 'matt-pocock',
+        name: 'Matt Pocock',
+        skills: ['ask-matt', 'writing-for-agents'],
+      },
     ],
-    'metadata.author feeds huashu, credits feed Humanlayer, and the rest fall back to Matt Pocock',
+    'the explicit source table feeds huashu and Humanlayer; everything else falls back to Matt Pocock',
+  );
+  assert.ok(
+    suggestionGroups(dialog)
+      .find((group) => group.source === 'matt-pocock')
+      ?.skills.includes('writing-for-agents'),
+    'a frontmatter author alone does not make a skill huashu; the source table decides',
   );
 
   const checkboxes = [...dialog.querySelectorAll('.deck-suggest-row input[type="checkbox"]')];
@@ -2188,10 +2289,10 @@ test('the review applies edited series names only to checked, unassigned skills'
 
   const dialog = container.querySelector('.deck-modal');
   const huashuInput = dialog.querySelector(
-    '.deck-suggest-group[data-module="huashu"] .deck-suggest-name',
+    '.deck-suggest-group[data-source="huashu"] .deck-suggest-name',
   );
   const mattInput = dialog.querySelector(
-    '.deck-suggest-group[data-module="matt-pocock"] .deck-suggest-name',
+    '.deck-suggest-group[data-source="matt-pocock"] .deck-suggest-name',
   );
   await act(async () => {
     setValue(huashuInput, 'Huashu Animation');
@@ -2286,12 +2387,96 @@ test('applying suggestions offers an undo toast that restores the previous serie
   await click(buttonByText('Refresh'));
 });
 
+test('applying suggestions re-reads live state and skips skills that gained a series', async () => {
+  profile = suggestionProfile();
+  await click(buttonByText('Refresh'));
+  if (buttonByText('Map')?.getAttribute('aria-pressed') !== 'true') await click(buttonByText('Map'));
+  await click(buttonByText('Suggest series'));
+
+  // Another tab assigns a series while this review is open.
+  profile = {
+    ...profile,
+    skills: profile.skills.map((skill) =>
+      skill.name === 'ask-matt' ? { ...skill, series: 'Late Manual' } : skill,
+    ),
+  };
+
+  calls.length = 0;
+  await click(buttonInScope(container.querySelector('.deck-modal'), 'Apply suggestions'));
+  const annotates = calls
+    .filter((call) => call.path === '/dsh-skill-deck/annotate')
+    .map((call) => call.body);
+  assert.deepEqual(
+    annotates,
+    [
+      { name: 'huashu-art-motion', series: 'huashu' },
+      { name: 'pr', series: 'Humanlayer' },
+      { name: 'writing-for-agents', series: 'Matt Pocock' },
+    ],
+    'the live series is checked again at apply time, not just the dialog snapshot',
+  );
+  assert.ok(
+    !annotates.some((call) => call.name === 'ask-matt'),
+    'a skill that gained a series while the dialog was open is not overwritten',
+  );
+  assert.equal(container.querySelector('.deck-modal'), null);
+  assert.equal(
+    mapModules().find((module) => module.tiles.includes('ask-matt'))?.title,
+    'Late Manual',
+    'the externally assigned series survives',
+  );
+
+  profile = JSON.parse(JSON.stringify(baseProfile));
+  await click(buttonByText('Refresh'));
+});
+
+test('a failed suggestion write rolls back the writes already applied', async () => {
+  profile = suggestionProfile();
+  await click(buttonByText('Refresh'));
+  if (buttonByText('Map')?.getAttribute('aria-pressed') !== 'true') await click(buttonByText('Map'));
+  await click(buttonByText('Suggest series'));
+
+  calls.length = 0;
+  failAnnotateAfter(1);
+  await click(buttonInScope(container.querySelector('.deck-modal'), 'Apply suggestions'));
+
+  const annotates = calls
+    .filter((call) => call.path === '/dsh-skill-deck/annotate')
+    .map((call) => call.body);
+  assert.deepEqual(
+    annotates,
+    [
+      { name: 'huashu-art-motion', series: 'huashu' },
+      { name: 'pr', series: 'Humanlayer' },
+      { name: 'huashu-art-motion', series: '' },
+    ],
+    'the write applied before the failure is restored instead of left behind',
+  );
+  const dialog = container.querySelector('.deck-modal');
+  assert.ok(dialog, 'the review stays open after a failure');
+  assert.match(dialog.textContent, /write failed/);
+  assert.doesNotMatch(dialog.textContent, /Suggested series applied/, 'the review did not report success');
+  assert.equal(buttonInScope(dialog, 'Apply suggestions')?.disabled, false, 'the review is retryable');
+  assert.equal(annotateFailure, null, 'the injected failure was consumed');
+  assert.equal(
+    mapModules().find((module) => module.tiles.includes('huashu-art-motion'))?.title,
+    'Unassigned',
+    'the partial write is gone from the board',
+  );
+  assert.ok(
+    mapModules().find((module) => module.tiles.includes('pr'))?.unassigned,
+    'the skill whose write failed never left the unassigned bucket',
+  );
+
+  profile = JSON.parse(JSON.stringify(baseProfile));
+  await click(buttonByText('Refresh'));
+});
+
 test('the suggestion review explains when every skill already has a series', async () => {
   const assigned = JSON.parse(JSON.stringify(baseProfile));
   assigned.skills = assigned.skills.map((skill) => ({
     ...skill,
     series: 'Existing',
-    manualSeries: 'Existing',
   }));
   profile = assigned;
   await click(buttonByText('Refresh'));

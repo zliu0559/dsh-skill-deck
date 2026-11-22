@@ -127,6 +127,9 @@ window.__ModuleLoader__.load({
       renameSeriesTitle: '重命名系列',
       renameSeriesAction: '重命名',
       renameSeriesHint: '这个系列里的每个技能都会在同一次请求里更新。',
+      renameMergeHint: '这个系列名已存在；确认后会把两个系列合并成一个。',
+      renameMergeConfirm: '与已有系列合并',
+      renameMergeRequired: '请先确认合并。',
       renaming: '重命名中…',
       seriesRenamed: '系列已重命名',
       unassignedHint: '把技能拖到这里可以移出系列。',
@@ -145,7 +148,8 @@ window.__ModuleLoader__.load({
       suggestSeries: '建议系列',
       suggestTitle: '建议系列',
       suggestInferred: '推断',
-      suggestInferredHint: '以下分组由 frontmatter 元数据推断，请先检查并修改再应用。',
+      suggestInferredHint:
+        '分组是推断的：huashu-art-motion 和 pr 来自已知来源，其余技能归入 Matt Pocock。请先检查并修改再应用。',
       suggestSeriesName: '系列名',
       suggestApply: '应用建议',
       suggestApplying: '应用中…',
@@ -261,6 +265,9 @@ window.__ModuleLoader__.load({
       renameSeriesTitle: 'Rename series',
       renameSeriesAction: 'Rename',
       renameSeriesHint: 'Every skill in this series is updated in one request.',
+      renameMergeHint: 'That series name already exists; confirming merges both series into one.',
+      renameMergeConfirm: 'Merge with the existing series',
+      renameMergeRequired: 'Confirm the merge first.',
       renaming: 'Renaming…',
       seriesRenamed: 'Series renamed',
       unassignedHint: 'Drag a skill here to remove it from its series.',
@@ -279,7 +286,8 @@ window.__ModuleLoader__.load({
       suggestSeries: 'Suggest series',
       suggestTitle: 'Suggest series',
       suggestInferred: 'Inferred',
-      suggestInferredHint: 'This grouping is inferred from frontmatter metadata. Review and edit it before applying.',
+      suggestInferredHint:
+        'This grouping is inferred: huashu-art-motion and pr come from their known source, and every other skill falls back to Matt Pocock. Review and edit it before applying.',
       suggestSeriesName: 'Series name',
       suggestApply: 'Apply suggestions',
       suggestApplying: 'Applying…',
@@ -332,7 +340,6 @@ window.__ModuleLoader__.load({
       .deck-suggest-group:first-of-type { border-top: 0; padding-top: 0; }
       .deck-suggest-row { display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; }
       .deck-suggest-skill-name { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-      .deck-suggest-evidence { margin-left: auto; font-size: 11px; color: var(--dsw-alias-label-caption, inherit); }
       .deck-map-module { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.22)); border-radius: var(--dsw-radius-lg, 10px); }
       .deck-map-module.is-empty { padding: 8px 12px; }
       .deck-map-module-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -345,6 +352,11 @@ window.__ModuleLoader__.load({
       .deck-map-tile { position: relative; display: flex; flex-direction: column; gap: 6px; box-sizing: border-box; width: 100%; aspect-ratio: 3 / 2; margin: 0; padding: 10px 11px; border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.22)); border-radius: var(--dsw-radius-lg, 10px); color: inherit; font: inherit; text-align: left; cursor: pointer; overflow: hidden; }
       .deck-map-tile:hover { border-color: var(--dsw-alias-border-l1, rgba(127,127,127,.45)); filter: brightness(.98); }
       .deck-map-tile:focus-visible { outline: 2px solid var(--dsw-focus-ring-color, #3b82f6); outline-offset: 2px; }
+      .deck-map-tile-wrap { position: relative; display: flex; min-width: 0; }
+      .deck-map-tile-wrap .deck-map-tile { height: 100%; }
+      .deck-map-tile-action { position: absolute; top: 6px; right: 6px; z-index: 2; height: 22px; padding: 0 8px; border-radius: 999px; border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.3)); background: var(--dsw-alias-bg-layer-1, #fff); color: inherit; font-size: 10px; cursor: pointer; opacity: 0; transition: opacity .12s ease; }
+      .deck-map-tile-wrap:hover .deck-map-tile-action, .deck-map-tile-wrap:focus-within .deck-map-tile-action { opacity: 1; }
+      .deck-map-tile-action:focus-visible { outline: 2px solid var(--dsw-focus-ring-color, #3b82f6); outline-offset: 2px; }
       .deck-map-tile:disabled { opacity: .6; cursor: default; }
       .deck-map-tile[draggable='true'] { cursor: grab; }
       .deck-map.is-dragging .deck-map-tile:active { cursor: grabbing; }
@@ -402,6 +414,8 @@ window.__ModuleLoader__.load({
       .deck-editor { width: 100%; min-height: 52vh; resize: vertical; border-radius: var(--dsw-radius-md, 8px); border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.3)); background: var(--dsw-alias-bg-base, rgba(127,127,127,.06)); color: inherit; padding: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.55; }
       .deck-note { font-size: 11px; color: var(--dsw-alias-label-caption, inherit); }
       .deck-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+      .deck-merge-hint { margin: 0 0 8px; }
+      .deck-merge-confirm { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; font-size: 12px; cursor: pointer; }
       .deck-field-label { font-size: 12px; font-weight: 600; }
       .deck-field .deck-input, .deck-field .deck-select { width: 100%; min-width: 0; }
       .deck-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding-top: 10px; border-top: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.2)); }
@@ -447,7 +461,8 @@ window.__ModuleLoader__.load({
       }
     }
 
-    async function api(path, body) {      const init = body
+    async function api(path, body) {
+      const init = body
         ? {
             method: 'POST',
             credentials: 'same-origin',
@@ -585,46 +600,66 @@ window.__ModuleLoader__.load({
       });
     }
 
+    /** Trim a series name; one normalizer per realm. */
+    function normalizeSeries(value) {
+      return String(value ?? '').trim();
+    }
+
+    /** Series compare trimmed and case-insensitively; the first spelling shows. */
+    function sameSeries(a, b) {
+      return normalizeSeries(a).toLowerCase() === normalizeSeries(b).toLowerCase();
+    }
+
     /**
-     * Coarse source modules for the Suggest series flow. `metadata.author` is
-     * the huashu signal, `metadata.credits.author` the Humanlayer one, and any
-     * skill without another known source falls back to Matt Pocock. The
-     * grouping is always inferred: the user reviews it before it is written.
+     * Whether renaming a series onto this value would merge another existing
+     * series, which needs the user's explicit confirmation.
      */
-    const SUGGEST_MODULES = [
-      { key: 'huashu', name: 'huashu' },
-      { key: 'humanlayer', name: 'Humanlayer' },
-      { key: 'matt-pocock', name: 'Matt Pocock' },
+    function renameCollides(skills, from, value) {
+      if (!normalizeSeries(value) || sameSeries(value, from)) return false;
+      return skills.some(
+        (skill) => normalizeSeries(skill.series) !== '' && sameSeries(skill.series, value),
+      );
+    }
+
+    /**
+     * Known sources are explicit: a skill's name decides its source, not an
+     * incidental frontmatter field. Every other skill is inferred as Matt
+     * Pocock. Adding a source is one table entry, not a new heuristic.
+     */
+    const SUGGEST_SOURCES = [
+      { key: 'huashu', name: 'huashu', skill: 'huashu-art-motion' },
+      { key: 'humanlayer', name: 'Humanlayer', skill: 'pr' },
     ];
+    const SUGGEST_FALLBACK = { key: 'matt-pocock', name: 'Matt Pocock' };
 
     /** A skill keeps its existing series; suggestions never replace one. */
     function hasSeries(skill) {
-      return String(skill.manualSeries || skill.series || '').trim() !== '';
+      return normalizeSeries(skill.series) !== '';
     }
 
-    function suggestionModuleFor(skill) {
-      if (skill.authorSource === 'metadata.author') return 'huashu';
-      if (skill.authorSource === 'metadata.credits.author') return 'humanlayer';
-      return 'matt-pocock';
+    function suggestionSourceFor(skill) {
+      const known = SUGGEST_SOURCES.find((source) => source.skill === skill.name);
+      return known ? known.key : SUGGEST_FALLBACK.key;
     }
 
     /**
      * Build the review proposal from every unassigned skill in the deck.
      * Assigned skills are excluded up front, so applying the result cannot
-     * overwrite a manual series. Empty modules are not shown.
+     * overwrite a manual series. Empty sources are not shown.
      * @param {Array<object>} skills
      * @returns {Array<{key: string, defaultName: string, skills: Array<object>}>}
      */
     function proposeSeries(skills) {
+      const sources = [...SUGGEST_SOURCES, SUGGEST_FALLBACK];
       const groups = new Map(
-        SUGGEST_MODULES.map((module) => [
-          module.key,
-          { key: module.key, defaultName: module.name, skills: [] },
+        sources.map((source) => [
+          source.key,
+          { key: source.key, defaultName: source.name, skills: [] },
         ]),
       );
       for (const skill of skills) {
         if (hasSeries(skill)) continue;
-        groups.get(suggestionModuleFor(skill)).skills.push(skill);
+        groups.get(suggestionSourceFor(skill)).skills.push(skill);
       }
       return [...groups.values()]
         .filter((group) => group.skills.length > 0)
@@ -655,8 +690,8 @@ window.__ModuleLoader__.load({
       return 'enabled';
     }
 
-    /** One line per module, listing only the statuses present in that series. */
-    function moduleStatusSummary(skills) {
+    /** One line per series, listing only the statuses present in that series. */
+    function seriesStatusSummary(skills) {
       const counts = { invalid: 0, disabled: 0, enabled: 0 };
       for (const skill of skills) counts[mapStatus(skill)] += 1;
       return MAP_STATUS_ORDER.filter((status) => counts[status] > 0)
@@ -683,12 +718,32 @@ window.__ModuleLoader__.load({
       return '';
     }
 
-    /** The label follows the pointer and names the series it will land in. */
-    function dropLabelFor(target) {
-      if (!target) return '';
-      if (target.kind === 'new') return t('dropToNewSeries');
-      if (target.kind === 'unassigned') return t('dropToUnassigned');
-      return t('dropToSeries') + ' · ' + target.label;
+    const NEW_SERIES_KEY = '\u0000new';
+
+    /**
+     * One descriptor per drop destination. Every drop site reads the same
+     * fields, so adding a destination cannot miss a label or write path.
+     */
+    function seriesTargetFor(group) {
+      return {
+        key: group.key,
+        label: group.label,
+        series: group.fallback ? '' : group.label,
+        dropLabel: group.fallback
+          ? t('dropToUnassigned')
+          : t('dropToSeries') + ' · ' + group.label,
+        opensDialog: false,
+      };
+    }
+
+    function newSeriesTarget() {
+      return {
+        key: NEW_SERIES_KEY,
+        label: t('newSeriesZone'),
+        series: '',
+        dropLabel: t('dropToNewSeries'),
+        opensDialog: true,
+      };
     }
 
     const MAP_COMPACT_QUERY = '(max-width: 640px), (pointer: coarse), (any-pointer: coarse)';
@@ -809,6 +864,7 @@ window.__ModuleLoader__.load({
       const activeName = compact ? null : (hovered ?? focused);
       const activeSkill = activeName ? byName.get(activeName) ?? null : null;
       const selectedSkill = compact && selected ? byName.get(selected) ?? null : null;
+      const newTarget = newSeriesTarget();
 
       const statusCounts = useMemo(() => {
         const next = { invalid: 0, disabled: 0, enabled: 0 };
@@ -881,25 +937,16 @@ window.__ModuleLoader__.load({
             /* a browser may refuse; the ref still carries the source */
           }
         }
-        const next = { name: skill.name, fromSeries: skill.manualSeries ?? skill.series ?? '' };
+        const next = { name: skill.name };
         dragRef.current = next;
         setDrag(next);
       };
-
-      const targetForModule = (group) => ({
-        kind: group.fallback ? 'unassigned' : 'series',
-        key: group.key,
-        label: group.label,
-        series: group.fallback ? '' : group.label,
-      });
 
       const hoverTarget = (event, next) => {
         if (!dragRef.current) return;
         event.preventDefault();
         if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
-        setTarget((current) =>
-          current && current.kind === next.kind && current.key === next.key ? current : next,
-        );
+        setTarget((current) => (current && current.key === next.key ? current : next));
       };
 
       const leaveTarget = (event, key) => {
@@ -918,7 +965,7 @@ window.__ModuleLoader__.load({
         const skill = byName.get(name) ?? null;
         endDrag();
         if (!skill) return;
-        if (next.kind === 'new') {
+        if (next.opensDialog) {
           setNewSeries({ skill, value: '' });
           return;
         }
@@ -951,13 +998,11 @@ window.__ModuleLoader__.load({
 
       const submitNewSeries = () => {
         if (!newSeries) return;
-        const value = newSeries.value.trim();
+        const value = normalizeSeries(newSeries.value);
         if (!value) return;
         // Typing an existing name in another case selects that series rather
         // than creating a near-duplicate spelling.
-        const existing = (seriesSuggestions || []).find(
-          (option) => option.toLowerCase() === value.toLowerCase(),
-        );
+        const existing = (seriesSuggestions || []).find((option) => sameSeries(option, value));
         const skill = newSeries.skill;
         setNewSeries(null);
         onMove(skill, existing ?? value);
@@ -968,41 +1013,61 @@ window.__ModuleLoader__.load({
         const size = formatBytes(skill.bytes);
         const label = skill.name + ' · ' + t(MAP_STATUS_LABEL[status]) + ' · ' + size;
         return h(
-          'button',
-          {
-            key: skill.name,
-            type: 'button',
-            className: 'deck-map-tile status-' + status,
-            'data-skill': skill.name,
-            'data-status': status,
-            draggable: true,
-            title: skill.name,
-            'aria-label': label,
-            'aria-pressed': compact ? (selected === skill.name ? 'true' : 'false') : undefined,
-            disabled: busy === skill.name + ':read',
-            ref: tileRef(skill.name),
-            style: { backgroundColor: MAP_STATUS_TINT[status] },
-            onDragStart: (event) => beginDrag(event, skill),
-            onDragEnd: endDrag,
-            onMouseEnter: () => setHovered(skill.name),
-            onMouseLeave: () => setHovered((current) => (current === skill.name ? null : current)),
-            onFocus: () => setFocused(skill.name),
-            onBlur: () => setFocused((current) => (current === skill.name ? null : current)),
-            onClick: () => chooseTile(skill),
-          },
-          h('span', { className: 'deck-map-tile-name', title: skill.name }, skill.name),
-          h('span', { className: 'deck-map-tile-badges' }, h(MapBadges, { skill })),
+          'div',
+          { key: skill.name, className: 'deck-map-tile-wrap', 'data-skill': skill.name },
           h(
-            'span',
-            { className: 'deck-map-tile-foot' },
-            h('span', {
-              className: 'deck-status-dot',
+            'button',
+            {
+              type: 'button',
+              className: 'deck-map-tile status-' + status,
+              'data-skill': skill.name,
               'data-status': status,
-              style: { backgroundColor: MAP_STATUS_SOLID[status] },
-              'aria-hidden': 'true',
-            }),
-            h('span', { className: 'deck-map-size' }, size),
+              draggable: true,
+              title: skill.name,
+              'aria-label': label,
+              'aria-pressed': compact ? (selected === skill.name ? 'true' : 'false') : undefined,
+              disabled: busy === skill.name + ':read',
+              ref: tileRef(skill.name),
+              style: { backgroundColor: MAP_STATUS_TINT[status] },
+              onDragStart: (event) => beginDrag(event, skill),
+              onDragEnd: endDrag,
+              onMouseEnter: () => setHovered(skill.name),
+              onMouseLeave: () => setHovered((current) => (current === skill.name ? null : current)),
+              onFocus: () => setFocused(skill.name),
+              onBlur: () => setFocused((current) => (current === skill.name ? null : current)),
+              onClick: () => chooseTile(skill),
+            },
+            h('span', { className: 'deck-map-tile-name', title: skill.name }, skill.name),
+            h('span', { className: 'deck-map-tile-badges' }, h(MapBadges, { skill })),
+            h(
+              'span',
+              { className: 'deck-map-tile-foot' },
+              h('span', {
+                className: 'deck-status-dot',
+                'data-status': status,
+                style: { backgroundColor: MAP_STATUS_SOLID[status] },
+                'aria-hidden': 'true',
+              }),
+              h('span', { className: 'deck-map-size' }, size),
+            ),
           ),
+          // Desktop tiles keep click/Enter-to-edit; this sibling action is a
+          // separate keyboard stop so the board never requires another view.
+          compact
+            ? null
+            : h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'deck-map-tile-action',
+                  'data-tile-action': 'true',
+                  'aria-label': t('moveToSeries') + ' · ' + skill.name,
+                  onClick: () => onAnnotate && onAnnotate(skill),
+                  onMouseEnter: () => setHovered(skill.name),
+                  onMouseLeave: () => setHovered((current) => (current === skill.name ? null : current)),
+                },
+                t('moveToSeries'),
+              ),
         );
       };
 
@@ -1101,7 +1166,7 @@ window.__ModuleLoader__.load({
         ),
         modules.map((group) => {
           const empty = group.count === 0;
-          const moduleTarget = targetForModule(group);
+          const seriesTarget = seriesTargetFor(group);
           const isTarget = Boolean(target) && target.key === group.key;
           // While a drag is live every other module recedes, so the target is
           // unmistakable even when the pointer is between tiles.
@@ -1119,39 +1184,41 @@ window.__ModuleLoader__.load({
               'data-series': group.key,
               'data-unassigned': group.fallback ? 'true' : 'false',
               'data-drop-target': isTarget ? 'true' : undefined,
-              onDragOver: (event) => hoverTarget(event, moduleTarget),
+              onDragOver: (event) => hoverTarget(event, seriesTarget),
               onDragLeave: (event) => leaveTarget(event, group.key),
-              onDrop: (event) => handleDrop(event, moduleTarget),
+              onDrop: (event) => handleDrop(event, seriesTarget),
             },
-            h(
-              'div',
-              { className: 'deck-map-module-head' },
-              h('h4', { className: 'deck-map-module-title' }, group.label),
-              h('span', { className: 'deck-map-module-count' }, String(group.count)),
-              empty
-                ? null
-                : h(
+            // An empty unassigned module is only a drop zone: no heading, no
+            // count and no status to read.
+            empty
+              ? null
+              : h(
+                  'div',
+                  { className: 'deck-map-module-head' },
+                  h('h4', { className: 'deck-map-module-title' }, group.label),
+                  h('span', { className: 'deck-map-module-count' }, String(group.count)),
+                  h(
                     'span',
                     { className: 'deck-map-module-status' },
-                    moduleStatusSummary(group.skills),
+                    seriesStatusSummary(group.skills),
                   ),
-              group.fallback
-                ? null
-                : h(
-                    'button',
-                    {
-                      type: 'button',
-                      className: 'deck-btn deck-map-rename',
-                      onClick: () => onRenameSeries && onRenameSeries(group),
-                    },
-                    t('renameSeries'),
-                  ),
-            ),
+                  group.fallback
+                    ? null
+                    : h(
+                        'button',
+                        {
+                          type: 'button',
+                          className: 'deck-btn deck-map-rename',
+                          onClick: () => onRenameSeries && onRenameSeries(group),
+                        },
+                        t('renameSeries'),
+                      ),
+                ),
             isTarget
               ? h(
                   'div',
                   { className: 'deck-map-drop-label', 'data-drop-label': 'true' },
-                  dropLabelFor(target),
+                  target.dropLabel,
                 )
               : null,
             empty
@@ -1166,19 +1233,17 @@ window.__ModuleLoader__.load({
         h(
           'div',
           {
-            className: 'deck-map-newseries' + (target && target.kind === 'new' ? ' is-drop-target' : ''),
+            className: 'deck-map-newseries' + (target && target.opensDialog ? ' is-drop-target' : ''),
             'data-new-series': 'true',
-            'data-drop-target': target && target.kind === 'new' ? 'true' : undefined,
-            onDragOver: (event) =>
-              hoverTarget(event, { kind: 'new', key: '\u0000new', label: t('newSeriesZone') }),
-            onDragLeave: (event) => leaveTarget(event, '\u0000new'),
-            onDrop: (event) =>
-              handleDrop(event, { kind: 'new', key: '\u0000new', label: t('newSeriesZone') }),
+            'data-drop-target': target && target.opensDialog ? 'true' : undefined,
+            onDragOver: (event) => hoverTarget(event, newTarget),
+            onDragLeave: (event) => leaveTarget(event, NEW_SERIES_KEY),
+            onDrop: (event) => handleDrop(event, newTarget),
           },
           h(
             'span',
-            target && target.kind === 'new' ? { 'data-drop-label': 'true' } : null,
-            target && target.kind === 'new' ? t('dropToNewSeries') : t('newSeriesZone'),
+            target && target.opensDialog ? { 'data-drop-label': 'true' } : null,
+            target && target.opensDialog ? target.dropLabel : t('newSeriesZone'),
           ),
         ),
         h(
@@ -1206,10 +1271,14 @@ window.__ModuleLoader__.load({
         popover,
         strip,
         newSeries
-          ? h(NewSeriesDialog, {
-              skill: newSeries.skill,
+          ? h(SeriesNameDialog, {
+              title: t('newSeriesTitle') + ' · ' + newSeries.skill.name,
               value: newSeries.value,
               suggestions: seriesSuggestions,
+              hint: t('newSeriesHint'),
+              actionLabel: t('newSeriesAction'),
+              footerNote: newSeries.skill.path,
+              submitDisabled: normalizeSeries(newSeries.value) === '',
               onChange: (value) => setNewSeries((current) => (current ? { ...current, value } : current)),
               onSubmit: submitNewSeries,
               onClose: () => setNewSeries(null),
@@ -1696,12 +1765,33 @@ window.__ModuleLoader__.load({
       );
     }
 
-    function NewSeriesDialog(props) {
-      const { skill, value, suggestions, onChange, onSubmit, onClose } = props;
-      const listId = NS + '-new-series-suggestions';
+    /**
+     * One series-name dialog shared by the rename and new-series flows. The
+     * caller owns the value, validation, busy/error state and any extra body
+     * content (the rename merge confirmation).
+     */
+    function SeriesNameDialog(props) {
+      const {
+        title,
+        value,
+        suggestions,
+        hint,
+        actionLabel,
+        busyLabel,
+        busy,
+        error,
+        footerNote,
+        submitDisabled,
+        onChange,
+        onSubmit,
+        onClose,
+        children,
+      } = props;
+      const listId = NS + '-series-name-suggestions';
+      const options = suggestions || [];
       return h(
         Modal,
-        { title: t('newSeriesTitle') + ' · ' + skill.name, onClose },
+        { title, onClose },
         h(
           'div',
           { className: 'deck-modal-body' },
@@ -1712,83 +1802,39 @@ window.__ModuleLoader__.load({
             h('input', {
               className: 'deck-input',
               value,
-              list: listId,
+              list: options.length ? listId : undefined,
               spellCheck: false,
               autoFocus: true,
               'aria-label': t('annotationSeries'),
               onChange: (event) => onChange(event.target.value),
               onKeyDown: (event) => {
-                if (event.key === 'Enter' && value.trim() !== '') onSubmit();
+                if (event.key === 'Enter' && !submitDisabled) onSubmit();
               },
             }),
-            h(
-              'datalist',
-              { id: listId },
-              (suggestions || []).map((option) => h('option', { key: option, value: option })),
-            ),
-            h('span', { className: 'deck-note' }, t('newSeriesHint')),
+            options.length
+              ? h(
+                  'datalist',
+                  { id: listId },
+                  options.map((option) => h('option', { key: option, value: option })),
+                )
+              : null,
+            hint ? h('span', { className: 'deck-note' }, hint) : null,
           ),
-        ),
-        h(
-          'div',
-          { className: 'deck-modal-foot' },
-          h('span', { className: 'deck-note' }, skill.path),
-          h(
-            'div',
-            { style: { display: 'flex', gap: 8 } },
-            h('button', { className: 'deck-btn', onClick: onClose }, t('cancel')),
-            h(
-              'button',
-              { className: 'deck-btn primary', disabled: value.trim() === '', onClick: onSubmit },
-              t('newSeriesAction'),
-            ),
-          ),
-        ),
-      );
-    }
-
-    function RenameSeriesDialog(props) {
-      const { from, value, busy, error, onChange, onSubmit, onClose } = props;
-      return h(
-        Modal,
-        { title: t('renameSeriesTitle') + ' · ' + from, onClose },
-        h(
-          'div',
-          { className: 'deck-modal-body' },
-          h(
-            'label',
-            { className: 'deck-field' },
-            h('span', { className: 'deck-field-label' }, t('annotationSeries')),
-            h('input', {
-              className: 'deck-input',
-              value,
-              spellCheck: false,
-              'aria-label': t('annotationSeries'),
-              onChange: (event) => onChange(event.target.value),
-              onKeyDown: (event) => {
-                if (event.key === 'Enter' && value.trim() !== '' && !busy) onSubmit();
-              },
-            }),
-            h('span', { className: 'deck-note' }, t('renameSeriesHint')),
-          ),
+          children,
           error ? h('p', { className: 'deck-error' }, error) : null,
         ),
         h(
           'div',
           { className: 'deck-modal-foot' },
-          h('span', { className: 'deck-note' }, from),
+          h('span', { className: 'deck-note' }, footerNote || ''),
           h(
             'div',
             { style: { display: 'flex', gap: 8 } },
             h('button', { className: 'deck-btn', onClick: onClose }, t('cancel')),
             h(
               'button',
-              {
-                className: 'deck-btn primary',
-                disabled: busy || value.trim() === '',
-                onClick: onSubmit,
-              },
-              busy ? t('renaming') : t('renameSeriesAction'),
+              { className: 'deck-btn primary', disabled: submitDisabled, onClick: onSubmit },
+              busy ? busyLabel || actionLabel : actionLabel,
             ),
           ),
         ),
@@ -1796,13 +1842,13 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Review dialog for inferred series. Every module name is editable and
-     * every skill carries its own checkbox, so the proposal is only ever a
-     * starting point. The caller owns the proposal and the write.
+     * Review dialog for inferred series. Every source's series name is
+     * editable and every skill carries its own checkbox, so the proposal is
+     * only ever a starting point. The caller owns the proposal and the write.
      */
     function SeriesSuggestDialog(props) {
-      const { groups, names, checked, busy, error, onNameChange, onToggleSkill, onSubmit, onClose } =
-        props;
+      const { proposal, busy, error, onNameChange, onToggleSkill, onSubmit, onClose } = props;
+      const { groups, names, checked } = proposal;
       const ready = groups.some(
         (group) =>
           String(names[group.key] ?? '').trim() !== '' &&
@@ -1824,7 +1870,7 @@ window.__ModuleLoader__.load({
           groups.map((group) =>
             h(
               'section',
-              { key: group.key, className: 'deck-suggest-group', 'data-module': group.key },
+              { key: group.key, className: 'deck-suggest-group', 'data-source': group.key },
               h(
                 'label',
                 { className: 'deck-field' },
@@ -1850,9 +1896,6 @@ window.__ModuleLoader__.load({
                       onChange: (event) => onToggleSkill(skill.name, event.target.checked),
                     }),
                     h('span', { className: 'deck-suggest-skill-name' }, skill.name),
-                    skill.authorSource
-                      ? h('span', { className: 'deck-suggest-evidence' }, skill.author)
-                      : null,
                   ),
                 ),
               ),
@@ -1916,9 +1959,9 @@ window.__ModuleLoader__.load({
       const [renameValue, setRenameValue] = useState('');
       const [renameError, setRenameError] = useState('');
       const [renameBusy, setRenameBusy] = useState(false);
-      const [suggestion, setSuggestion] = useState(null);
-      const [suggestNames, setSuggestNames] = useState({});
-      const [suggestChecked, setSuggestChecked] = useState({});
+      const [renameMerge, setRenameMerge] = useState(false);
+      const [renameForceMerge, setRenameForceMerge] = useState(false);
+      const [proposal, setProposal] = useState(null);
       const [suggestError, setSuggestError] = useState('');
       const [suggestBusy, setSuggestBusy] = useState(false);
       const [copied, setCopied] = useState(false);
@@ -1983,27 +2026,63 @@ window.__ModuleLoader__.load({
         }));
       }, []);
 
-      // Series is manual-only, so both effective and manual values move together.
+      // Series is manual-only: one field is both the stored and displayed value.
       const setSkillSeries = useCallback((name, series) => {
         setState((prev) => ({
           ...prev,
-          skills: prev.skills.map((item) =>
-            item.name === name ? { ...item, series, manualSeries: series } : item,
-          ),
+          skills: prev.skills.map((item) => (item.name === name ? { ...item, series } : item)),
         }));
       }, []);
 
-      const undoMove = useCallback(
-        async (name, previousSeries) => {
+      /**
+       * Apply a list of series assignments in order. A mid-loop failure
+       * restores every write that already landed, then reloads, so a partial
+       * suggestion or undo never survives silently.
+       */
+      const applyAssignments = useCallback(
+        async (assignments) => {
+          const applied = [];
           try {
-            const payload = await api('/annotate', { name, series: previousSeries });
-            if (payload.skill) replaceSkill(payload.skill);
+            for (const assignment of assignments) {
+              const payload = await api('/annotate', {
+                name: assignment.name,
+                series: assignment.series,
+              });
+              if (payload.skill) replaceSkill(payload.skill);
+              applied.push(assignment);
+            }
+            return applied;
+          } catch (error) {
+            for (const assignment of [...applied].reverse()) {
+              try {
+                const payload = await api('/annotate', {
+                  name: assignment.name,
+                  series: assignment.previousSeries,
+                });
+                if (payload.skill) replaceSkill(payload.skill);
+              } catch {
+                /* the reload below reconciles whatever rollback could not */
+              }
+            }
+            await load();
+            throw error;
+          }
+        },
+        [load, replaceSkill],
+      );
+
+      const undoMove = useCallback(
+        async (name, previousSeries, currentSeries) => {
+          try {
+            await applyAssignments([
+              { name, series: previousSeries, previousSeries: currentSeries },
+            ]);
             notify(t('undone'));
           } catch (error) {
             notify(error.message, 'error');
           }
         },
-        [notify, replaceSkill],
+        [applyAssignments, notify],
       );
 
       /**
@@ -2013,9 +2092,9 @@ window.__ModuleLoader__.load({
        */
       const moveSkill = useCallback(
         async (skill, series) => {
-          const previous = skill.manualSeries ?? skill.series ?? '';
-          const next = String(series ?? '');
-          if (previous.trim().toLowerCase() === next.trim().toLowerCase()) return;
+          const previous = normalizeSeries(skill.series);
+          const next = normalizeSeries(series);
+          if (sameSeries(previous, next)) return;
           setSkillSeries(skill.name, next);
           try {
             const payload = await api('/annotate', { name: skill.name, series: next });
@@ -2023,7 +2102,7 @@ window.__ModuleLoader__.load({
             notify(
               next ? t('movedTo') + ' · ' + next : t('movedOut'),
               'ok',
-              { label: t('undo'), onClick: () => undoMove(skill.name, previous) },
+              { label: t('undo'), onClick: () => undoMove(skill.name, previous, next) },
             );
           } catch (error) {
             setSkillSeries(skill.name, previous);
@@ -2067,7 +2146,7 @@ window.__ModuleLoader__.load({
         setAnnotationForm({
           category: skill.manualCategory ?? '',
           author: skill.manualAuthor ?? '',
-          series: skill.manualSeries ?? '',
+          series: normalizeSeries(skill.series),
         });
         setAnnotationError('');
       }, []);
@@ -2095,9 +2174,17 @@ window.__ModuleLoader__.load({
       const openRenameSeries = useCallback((group) => {
         const first = [...group.skills].sort(bySkillName)[0];
         if (!first) return;
-        setRenaming({ from: group.label, name: first.name, count: group.count });
+        // The addressed skill must carry the previousSeries the host validates,
+        // so derive it from an actual member rather than the display spelling.
+        setRenaming({
+          from: normalizeSeries(first.series) || group.label,
+          name: first.name,
+          count: group.count,
+        });
         setRenameValue(group.label);
         setRenameError('');
+        setRenameMerge(false);
+        setRenameForceMerge(false);
       }, []);
 
       const openSuggestSeries = useCallback(() => {
@@ -2108,102 +2195,121 @@ window.__ModuleLoader__.load({
           names[group.key] = group.defaultName;
           for (const skill of group.skills) checked[skill.name] = true;
         }
-        setSuggestion({ groups });
-        setSuggestNames(names);
-        setSuggestChecked(checked);
+        setProposal({ groups, names, checked });
         setSuggestError('');
       }, [state.skills]);
 
       const undoSeriesSuggestion = useCallback(
         async (applied) => {
           try {
-            for (const assignment of applied) {
-              const payload = await api('/annotate', {
+            await applyAssignments(
+              applied.map((assignment) => ({
                 name: assignment.name,
                 series: assignment.previousSeries,
-              });
-              replaceSkill(payload.skill);
-            }
+                previousSeries: assignment.series,
+              })),
+            );
             notify(t('suggestUndone'));
           } catch (error) {
             notify(error.message, 'error');
-            await load();
           }
         },
-        [load, notify, replaceSkill],
+        [applyAssignments, notify],
       );
 
       const submitSuggestSeries = useCallback(async () => {
-        if (!suggestion || suggestBusy) return;
-        // Re-check every candidate at apply time: a skill that already carries
-        // a manual series is skipped, so the write can never overwrite one.
-        const assignments = [];
-        for (const group of suggestion.groups) {
-          const series = String(suggestNames[group.key] ?? '').trim();
-          if (!series) continue;
-          for (const skill of group.skills) {
-            if (!suggestChecked[skill.name] || hasSeries(skill)) continue;
-            assignments.push({
-              name: skill.name,
-              previousSeries: String(skill.manualSeries ?? ''),
-              series,
-            });
-          }
-        }
-        if (assignments.length === 0) return;
+        if (!proposal || suggestBusy) return;
         setSuggestBusy(true);
-        const applied = [];
         try {
-          for (const assignment of assignments) {
-            const payload = await api('/annotate', {
-              name: assignment.name,
-              series: assignment.series,
-            });
-            replaceSkill(payload.skill);
-            applied.push(assignment);
+          // Re-read live state: a series assigned after this dialog opened must
+          // never be overwritten by the snapshot the review was built from.
+          const live = await api('/state');
+          const liveSkills = Array.isArray(live.skills) ? live.skills : [];
+          const liveByName = new Map(liveSkills.map((skill) => [skill.name, skill]));
+          const assignments = [];
+          for (const group of proposal.groups) {
+            const series = normalizeSeries(proposal.names[group.key]);
+            if (!series) continue;
+            for (const skill of group.skills) {
+              if (!proposal.checked[skill.name]) continue;
+              const liveSkill = liveByName.get(skill.name);
+              if (!liveSkill || hasSeries(liveSkill)) continue;
+              assignments.push({
+                name: skill.name,
+                previousSeries: normalizeSeries(liveSkill.series),
+                series,
+              });
+            }
           }
-          setSuggestion(null);
+          setState((prev) => ({
+            ...prev,
+            skills: liveSkills,
+            roots: live.roots ?? prev.roots,
+            totals: live.totals ?? prev.totals,
+            version: live.version ?? prev.version,
+            platform: live.platform ?? prev.platform,
+            client: live.client ?? prev.client,
+          }));
+          if (assignments.length === 0) {
+            setProposal(null);
+            notify(t('suggestNone'));
+            return;
+          }
+          const applied = await applyAssignments(assignments);
+          setProposal(null);
           notify(t('suggestApplied'), 'ok', {
             label: t('undo'),
             onClick: () => undoSeriesSuggestion(applied),
           });
         } catch (error) {
-          setSuggestError(error.message);
-          if (applied.length) await load();
+          setSuggestError(error.message || t('unknownError'));
         } finally {
           setSuggestBusy(false);
         }
       }, [
-        load,
+        applyAssignments,
         notify,
-        replaceSkill,
+        proposal,
         suggestBusy,
-        suggestChecked,
-        suggestNames,
-        suggestion,
         undoSeriesSuggestion,
       ]);
 
       const submitRenameSeries = useCallback(async () => {
         if (!renaming || renameBusy) return;
-        const series = renameValue.trim();
+        const series = normalizeSeries(renameValue);
         if (!series) return;
+        const collides =
+          renameForceMerge || renameCollides(state.skills, renaming.from, series);
+        if (collides && !renameMerge) {
+          setRenameError(t('renameMergeRequired'));
+          return;
+        }
         setRenameBusy(true);
         try {
-          await api('/annotate', {
-            name: renaming.name,
-            previousSeries: renaming.from,
-            series,
-          });
+          const body = { name: renaming.name, previousSeries: renaming.from, series };
+          if (renameMerge) body.confirmMerge = true;
+          await api('/annotate', body);
           setRenaming(null);
           notify(t('seriesRenamed'));
           await load();
         } catch (error) {
+          // Another window may have created the colliding series after this
+          // dialog opened; ask for the merge confirmation on the retry.
+          if (error.status === 409) setRenameForceMerge(true);
           setRenameError(error.message);
         } finally {
           setRenameBusy(false);
         }
-      }, [load, notify, renameBusy, renameValue, renaming]);
+      }, [
+        load,
+        notify,
+        renameBusy,
+        renameForceMerge,
+        renameMerge,
+        renameValue,
+        renaming,
+        state.skills,
+      ]);
 
       const toggle = useCallback(
         async (skill, surface, enabled) => {
@@ -2382,7 +2488,7 @@ window.__ModuleLoader__.load({
       const suggestionsFor = useCallback((read) => {
         const seen = new Map();
         for (const skill of state.skills) {
-          const value = String(read(skill) || '').trim();
+          const value = normalizeSeries(read(skill));
           if (!value) continue;
           const key = value.toLowerCase();
           if (!seen.has(key)) seen.set(key, value);
@@ -2395,9 +2501,12 @@ window.__ModuleLoader__.load({
         [suggestionsFor],
       );
       const seriesSuggestions = useMemo(
-        () => suggestionsFor((skill) => skill.manualSeries),
+        () => suggestionsFor((skill) => skill.series),
         [suggestionsFor],
       );
+      const renameCollision =
+        Boolean(renaming) &&
+        (renameForceMerge || renameCollides(state.skills, renaming.from, renameValue));
 
       const visible = useMemo(() => {
         const needle = query.trim().toLowerCase();
@@ -2679,38 +2788,70 @@ window.__ModuleLoader__.load({
               onClose: () => setAnnotating(null),
             })
           : null,
-        suggestion
+        proposal
           ? h(SeriesSuggestDialog, {
-              groups: suggestion.groups,
-              names: suggestNames,
-              checked: suggestChecked,
+              proposal,
               busy: suggestBusy,
               error: suggestError,
               onNameChange: (key, value) => {
-                setSuggestNames((prev) => ({ ...prev, [key]: value }));
+                setProposal((prev) =>
+                  prev ? { ...prev, names: { ...prev.names, [key]: value } } : prev,
+                );
                 if (suggestError) setSuggestError('');
               },
               onToggleSkill: (name, value) => {
-                setSuggestChecked((prev) => ({ ...prev, [name]: value }));
+                setProposal((prev) =>
+                  prev ? { ...prev, checked: { ...prev.checked, [name]: value } } : prev,
+                );
                 if (suggestError) setSuggestError('');
               },
               onSubmit: submitSuggestSeries,
-              onClose: () => setSuggestion(null),
+              onClose: () => setProposal(null),
             })
           : null,
         renaming
-          ? h(RenameSeriesDialog, {
-              from: renaming.from,
-              value: renameValue,
-              busy: renameBusy,
-              error: renameError,
-              onChange: (value) => {
-                setRenameValue(value);
-                if (renameError) setRenameError('');
+          ? h(
+              SeriesNameDialog,
+              {
+                title: t('renameSeriesTitle') + ' · ' + renaming.from,
+                value: renameValue,
+                suggestions: seriesSuggestions,
+                hint: t('renameSeriesHint'),
+                actionLabel: t('renameSeriesAction'),
+                busyLabel: t('renaming'),
+                busy: renameBusy,
+                error: renameError,
+                footerNote: renaming.from,
+                submitDisabled:
+                  renameBusy ||
+                  normalizeSeries(renameValue) === '' ||
+                  (renameCollision && !renameMerge),
+                onChange: (value) => {
+                  setRenameValue(value);
+                  if (renameError) setRenameError('');
+                },
+                onSubmit: submitRenameSeries,
+                onClose: () => setRenaming(null),
               },
-              onSubmit: submitRenameSeries,
-              onClose: () => setRenaming(null),
-            })
+              renameCollision
+                ? h('p', { className: 'deck-note deck-merge-hint' }, t('renameMergeHint'))
+                : null,
+              renameCollision
+                ? h(
+                    'label',
+                    { className: 'deck-merge-confirm' },
+                    h('input', {
+                      type: 'checkbox',
+                      checked: renameMerge,
+                      onChange: (event) => {
+                        setRenameMerge(event.target.checked);
+                        if (renameError) setRenameError('');
+                      },
+                    }),
+                    h('span', null, t('renameMergeConfirm')),
+                  )
+                : null,
+            )
           : null,
         duplicating
           ? h(DuplicateDialog, {
@@ -2827,8 +2968,7 @@ window.__ModuleLoader__.load({
         CreateDialog,
         DuplicateDialog,
         AnnotationDialog,
-        RenameSeriesDialog,
-        NewSeriesDialog,
+        SeriesNameDialog,
         SeriesSuggestDialog,
         DiagFooter,
       },

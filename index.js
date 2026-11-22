@@ -255,12 +255,16 @@ export function apply(ctx) {
       if (payload.previousSeries !== undefined && typeof payload.previousSeries !== 'string') {
         throw Object.assign(new Error('previousSeries must be a string'), { status: 400 });
       }
+      if (payload.confirmMerge !== undefined && typeof payload.confirmMerge !== 'boolean') {
+        throw Object.assign(new Error('confirmMerge must be a boolean'), { status: 400 });
+      }
       const result = await annotateSkill({
         name: String(payload.name ?? ''),
         category: payload.category,
         author: payload.author,
         series: payload.series,
         previousSeries: payload.previousSeries,
+        confirmMerge: payload.confirmMerge,
       });
       sendJson(response, 200, { ok: true, ...result });
     });
