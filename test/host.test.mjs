@@ -74,7 +74,7 @@ function call(path, options) {
 
 test('exports a cordis plugin and mounts every route', () => {
   assert.equal(name, 'dsh-skill-deck');
-  for (const path of ['/state', '/read', '/save', '/toggle', '/delete', '/reveal']) {
+  for (const path of ['/state', '/create', '/read', '/save', '/toggle', '/delete', '/reveal']) {
     assert.ok(routes.has('/dsh-skill-deck' + path), path);
   }
 });
@@ -99,6 +99,22 @@ test('read returns content and a revision', async () => {
   assert.equal(payload.ok, true);
   assert.match(payload.content, /# Demo/);
   assert.match(payload.revision, /^[0-9a-f]{16}$/);
+});
+
+test('create makes a new skill and refuses a duplicate', async () => {
+  const first = await call('/create', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', host: '127.0.0.1:1' },
+    body: JSON.stringify({ name: 'route-created', description: 'Created through the route.' }),
+  });
+  assert.equal(first.status, 200);
+  assert.equal(JSON.parse(first.body).skill.name, 'route-created');
+  const duplicate = await call('/create', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', host: '127.0.0.1:1' },
+    body: JSON.stringify({ name: 'route-created', description: 'Again.' }),
+  });
+  assert.equal(duplicate.status, 409);
 });
 
 test('toggle refuses an unknown surface', async () => {

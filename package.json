@@ -1,6 +1,6 @@
 {
   "name": "dsh-skill-deck",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "DSH Skill Deck: browse, toggle, edit and remove agent skills from the DeepSeek Harness Settings page.",
   "type": "module",
   "main": "index.js",

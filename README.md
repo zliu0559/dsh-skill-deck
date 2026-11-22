@@ -13,6 +13,8 @@ DSH discovers skills from disk and hot-reloads them, but the only way to change 
 - **See what is actually loaded** — name, description, which surfaces are enabled, file count, size, last change.
 - **Toggle without editing YAML** — "Model" writes `disable-model-invocation`, "Slash" writes `user-invocable`; every other byte of the file is preserved.
 - **Edit the whole document** — `SKILL.md` opens in a full-text editor and is saved atomically, with a revision guard against overwriting an external change.
+- **Create** a skill from a name and a one-line description; the plugin writes a
+  valid `SKILL.md` and opens it for editing.
 - **Delete safely** — removing a skill moves its directory to `~/.dsh/skills-trash/` instead of destroying it.
 
 ## Install
@@ -89,7 +91,7 @@ how to report an issue.
 
 - Project-level roots (`<repo>/.dsh/skills`) with a workspace picker.
 - Install a skill from a GitHub `owner/repo` source instead of only editing local ones.
-- A skill creation form for people who do not want to write frontmatter by hand.
+- Duplicate a skill as a starting point for a variant.
 
 ## License
 

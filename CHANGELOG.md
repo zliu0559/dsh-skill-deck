@@ -1,6 +1,13 @@
 # Changelog
 
-## 0.1.1 — unreleased
+## 0.2.0 — unreleased
+
+- **New skill** button: create a skill from a name and a one-line description,
+  in `~/.dsh/skills` or `~/.agents/skills`, then land straight in the editor.
+- The plugin creates `<root>/<name>/SKILL.md` with valid frontmatter (quoting the
+  description when it needs it) and refuses duplicate or non-kebab-case names.
+
+## 0.1.1 — 2026-11-22
 
 - Filter options now show how many skills each one matches, and the header shows
   `visible / total` while a search or filter is active.

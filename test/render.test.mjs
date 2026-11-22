@@ -29,7 +29,7 @@ const module = captured.factory((id) => {
   assert.equal(id, 'react');
   return React;
 });
-const { SkillRow, Panel } = module.components;
+const { SkillRow, Panel, CreateDialog } = module.components;
 
 const skill = {
   name: 'demo-skill',
@@ -87,4 +87,36 @@ test('Panel renders its loading state without a backend', () => {
   const markup = renderToStaticMarkup(React.createElement(Panel));
   assert.match(markup, /正在读取技能/);
   assert.match(markup, /技能/);
+});
+
+test('CreateDialog renders its fields and keeps submit disabled until filled', () => {
+  const empty = renderToStaticMarkup(
+    React.createElement(CreateDialog, {
+      form: { name: '', description: '', scope: 'user-dsh' },
+      busy: false,
+      error: '',
+      onChange: noop,
+      onSubmit: noop,
+      onClose: noop,
+    }),
+  );
+  assert.match(empty, /新建技能/);
+  assert.match(empty, /技能名/);
+  assert.match(empty, /一句话描述/);
+  assert.match(empty, /disabled/);
+
+  const filled = renderToStaticMarkup(
+    React.createElement(CreateDialog, {
+      form: { name: 'new-skill', description: 'Does things.', scope: 'user-agents' },
+      busy: false,
+      error: 'a problem',
+      onChange: noop,
+      onSubmit: noop,
+      onClose: noop,
+    }),
+  );
+  assert.match(filled, /new-skill/);
+  assert.match(filled, /a problem/);
+  assert.match(filled, /user-agents|共享/);
+  assert.doesNotMatch(filled, /deck-btn primary" disabled/);
 });

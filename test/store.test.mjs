@@ -8,7 +8,7 @@ const home = mkdtempSync(join(tmpdir(), 'skill-deck-'));
 process.env.DSH_HOME = home;
 process.env.DSH_AGENTS_HOME = join(home, 'agents');
 
-const { listSkills, readSkill, removeSkill, saveSkill, toggleSkill } = await import('../lib/store.js');
+const { listSkills, readSkill, removeSkill, saveSkill, toggleSkill, createSkill } = await import('../lib/store.js');
 
 function writeSkill(name, extra = '') {
   const dir = join(home, 'skills', name);
@@ -119,4 +119,25 @@ test('discovers a skill behind a junction', async (t) => {
   assert.ok(linked);
   assert.equal(linked.isBundle, true);
   assert.equal(linked.description, 'Linked.');
+});
+
+test('creates a valid skill and refuses duplicates or bad names', async () => {
+  const created = await createSkill({ name: 'fresh-skill', description: 'A brand new skill: with a colon' });
+  assert.equal(created.skill.name, 'fresh-skill');
+  assert.equal(created.skill.description, 'A brand new skill: with a colon');
+  assert.ok(readFileSync(join(home, 'skills', 'fresh-skill', 'SKILL.md'), 'utf8').includes('description: "A brand new skill: with a colon"'));
+  const { skills } = await listSkills();
+  assert.ok(skills.some((skill) => skill.name === 'fresh-skill' && skill.valid));
+  await assert.rejects(
+    () => createSkill({ name: 'fresh-skill', description: 'again' }),
+    (error) => error.status === 409,
+  );
+  await assert.rejects(
+    () => createSkill({ name: 'Not Kebab', description: 'x' }),
+    (error) => error.status === 400,
+  );
+  await assert.rejects(
+    () => createSkill({ name: 'no-description', description: '   ' }),
+    (error) => error.status === 400,
+  );
 });

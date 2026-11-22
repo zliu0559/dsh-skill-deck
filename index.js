@@ -7,6 +7,7 @@
  * directory in the OS file manager.
  */
 import {
+  createSkill,
   listSkills,
   readSkill,
   removeSkill,
@@ -141,6 +142,16 @@ export function apply(ctx) {
         invalid: skills.filter((skill) => !skill.valid).length,
       };
       sendJson(response, 200, { ok: true, roots, skills, totals });
+    });
+
+    route('/create', async (request, response) => {
+      const payload = await readJson(request);
+      const result = await createSkill({
+        name: String(payload.name ?? ''),
+        description: String(payload.description ?? ''),
+        scope: typeof payload.scope === 'string' ? payload.scope : undefined,
+      });
+      sendJson(response, 200, { ok: true, ...result });
     });
 
     route('/read', async (request, response) => {

@@ -61,6 +61,19 @@ window.__ModuleLoader__.load({
       deleteAction: '移入回收站',
       revealFailed: '无法打开目录',
       unsupported: '当前版本不支持这个操作。',
+      create: '新建',
+      createTitle: '新建技能',
+      createName: '技能名',
+      createNameHint: 'kebab-case，例如 my-new-skill；目录名会与它一致。',
+      createDescription: '一句话描述',
+      createDescriptionHint: '模型靠它判断何时调用这个技能。',
+      createScope: '保存到',
+      createScopeUser: '~/.dsh/skills（个人）',
+      createScopeAgents: '~/.agents/skills（共享）',
+      createAction: '创建',
+      creating: '创建中…',
+      created: '已创建，正在打开编辑器',
+      nameRequired: '请填写合规的技能名和描述。',
     };
 
     const en = {
@@ -109,6 +122,19 @@ window.__ModuleLoader__.load({
       deleteAction: 'Move to trash',
       revealFailed: 'Could not open the folder',
       unsupported: 'This build does not support that action.',
+      create: 'New',
+      createTitle: 'New skill',
+      createName: 'Skill name',
+      createNameHint: 'kebab-case, e.g. my-new-skill; the folder is named after it.',
+      createDescription: 'One-line description',
+      createDescriptionHint: 'The model reads this to decide when to invoke the skill.',
+      createScope: 'Save to',
+      createScopeUser: '~/.dsh/skills (personal)',
+      createScopeAgents: '~/.agents/skills (shared)',
+      createAction: 'Create',
+      creating: 'Creating…',
+      created: 'Created — opening the editor',
+      nameRequired: 'Enter a valid name and a description.',
     };
 
     const language = (navigator.language || 'en').toLowerCase();
@@ -156,6 +182,9 @@ window.__ModuleLoader__.load({
       .deck-modal-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.2)); }
       .deck-editor { width: 100%; min-height: 52vh; resize: vertical; border-radius: var(--dsw-radius-md, 8px); border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.3)); background: var(--dsw-alias-bg-base, rgba(127,127,127,.06)); color: inherit; padding: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.55; }
       .deck-note { font-size: 11px; color: var(--dsw-alias-label-caption, inherit); }
+      .deck-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+      .deck-field-label { font-size: 12px; font-weight: 600; }
+      .deck-field .deck-input, .deck-field .deck-select { width: 100%; min-width: 0; }
       .deck-toast { position: fixed; right: 24px; bottom: 24px; z-index: 70; padding: 10px 14px; border-radius: var(--dsw-radius-md, 8px); background: #111827; color: #f9fafb; font-size: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
       .deck-toast.error { background: #7f1d1d; }
       @media (max-width: 720px) { .deck-row { grid-template-columns: 1fr; } }
@@ -315,6 +344,79 @@ window.__ModuleLoader__.load({
       );
     }
 
+    function CreateDialog(props) {
+      const { form, busy, error, onChange, onSubmit, onClose } = props;
+      const ready = form.name.trim() !== '' && form.description.trim() !== '';
+      const field = (label, control, hint) =>
+        h(
+          'label',
+          { className: 'deck-field' },
+          h('span', { className: 'deck-field-label' }, label),
+          control,
+          hint ? h('span', { className: 'deck-note' }, hint) : null,
+        );
+      return h(
+        Modal,
+        { title: t('createTitle'), onClose },
+        h(
+          'div',
+          { className: 'deck-modal-body' },
+          field(
+            t('createName'),
+            h('input', {
+              className: 'deck-input',
+              value: form.name,
+              placeholder: 'my-new-skill',
+              spellCheck: false,
+              'aria-label': t('createName'),
+              onChange: (event) => onChange('name', event.target.value),
+            }),
+            t('createNameHint'),
+          ),
+          field(
+            t('createDescription'),
+            h('input', {
+              className: 'deck-input',
+              value: form.description,
+              'aria-label': t('createDescription'),
+              onChange: (event) => onChange('description', event.target.value),
+            }),
+            t('createDescriptionHint'),
+          ),
+          field(
+            t('createScope'),
+            h(
+              'select',
+              {
+                className: 'deck-select',
+                value: form.scope,
+                'aria-label': t('createScope'),
+                onChange: (event) => onChange('scope', event.target.value),
+              },
+              h('option', { value: 'user-dsh' }, t('createScopeUser')),
+              h('option', { value: 'user-agents' }, t('createScopeAgents')),
+            ),
+          ),
+          error ? h('p', { className: 'deck-error', style: { marginTop: 10 } }, error) : null,
+        ),
+        h(
+          'div',
+          { className: 'deck-modal-foot' },
+          h('span', { className: 'deck-note' }, t('createNameHint')),
+          h(
+            'div',
+            { style: { display: 'flex', gap: 8 } },
+            h('button', { className: 'deck-btn', onClick: onClose }, t('cancel')),
+            h(
+              'button',
+              { className: 'deck-btn primary', disabled: busy || !ready, onClick: onSubmit },
+              busy ? t('creating') : t('createAction'),
+            ),
+          ),
+        ),
+      );
+    }
+
     function Panel() {
       const [state, setState] = useState({ status: 'loading', error: null, skills: [], roots: [], totals: null });
       const [query, setQuery] = useState('');
@@ -327,6 +429,10 @@ window.__ModuleLoader__.load({
       const [confirming, setConfirming] = useState(null);
       const [confirmText, setConfirmText] = useState('');
       const [toast, setToast] = useState(null);
+      const [creating, setCreating] = useState(false);
+      const [createForm, setCreateForm] = useState({ name: '', description: '', scope: 'user-dsh' });
+      const [createError, setCreateError] = useState('');
+      const [createBusy, setCreateBusy] = useState(false);
       const toastTimer = useRef(null);
 
       const notify = useCallback((message, kind) => {
@@ -411,6 +517,36 @@ window.__ModuleLoader__.load({
           setBusy('');
         }
       }, [editor, notify]);
+
+      const openCreate = useCallback(() => {
+        setCreateForm({ name: '', description: '', scope: 'user-dsh' });
+        setCreateError('');
+        setCreating(true);
+      }, []);
+
+      const submitCreate = useCallback(async () => {
+        const name = createForm.name.trim();
+        if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name) || createForm.description.trim() === '') {
+          setCreateError(t('nameRequired'));
+          return;
+        }
+        setCreateBusy(true);
+        try {
+          const payload = await api('/create', {
+            name,
+            description: createForm.description.trim(),
+            scope: createForm.scope,
+          });
+          setCreating(false);
+          notify(t('created'));
+          await load();
+          openEditor({ name: payload.skill.name, path: payload.skill.path });
+        } catch (error) {
+          setCreateError(error.message);
+        } finally {
+          setCreateBusy(false);
+        }
+      }, [createForm, load, notify, openEditor]);
 
       const closeEditor = useCallback(() => {
         if (saving) return;
@@ -566,6 +702,7 @@ window.__ModuleLoader__.load({
               h('option', { value: 'disabled' }, t('filterDisabled') + ' (' + counts.disabled + ')'),
               h('option', { value: 'invalid' }, t('filterInvalid') + ' (' + counts.invalid + ')'),
             ),
+            h('button', { className: 'deck-btn', onClick: openCreate }, t('create')),
             h(
               'button',
               { className: 'deck-btn', onClick: load, disabled: state.status === 'loading' },
@@ -654,7 +791,20 @@ window.__ModuleLoader__.load({
               ),
             )
           : null,
-        toast ? h('div', { className: 'deck-toast' + (toast.kind === 'error' ? ' error' : '') }, toast.message) : null,
+        creating
+          ? h(CreateDialog, {
+              form: createForm,
+              busy: createBusy,
+              error: createError,
+              onChange: (field, value) => {
+                setCreateForm((prev) => ({ ...prev, [field]: value }));
+                if (createError) setCreateError('');
+              },
+              onSubmit: submitCreate,
+              onClose: () => setCreating(false),
+            })
+          : null,
+        toast ? h('div', { className: 'deck-toast' + (toast.kind === 'error' ? ' error' : ''), role: 'status' }, toast.message) : null,
       );
     }
 
@@ -681,7 +831,7 @@ window.__ModuleLoader__.load({
       );
     }
 
-    return { name: NS, inject: ['slots'], apply, components: { Panel, SkillRow } };
+    return { name: NS, inject: ['slots'], apply, components: { Panel, SkillRow, CreateDialog } };
   },
 });
 
