@@ -35,7 +35,10 @@ dom.window.__ModuleLoader__ = {
 
 let profile = {
   ok: true,
-  roots: [{ id: 'user-dsh', path: '/home/me/.dsh/skills', label: '~/.dsh/skills', writable: true }],
+  roots: [
+    { id: 'user-dsh', path: '/home/me/.dsh/skills', label: '~/.dsh/skills', writable: true },
+    { id: 'user-agents', path: '/home/me/.agents/skills', label: '~/.agents/skills', writable: true },
+  ],
   skills: [
     {
       name: 'demo',
@@ -73,11 +76,51 @@ let profile = {
       category: 'documentation',
       author: 'Docs Writer',
     },
+    {
+      name: 'lint-skill',
+      description: 'Lints documentation.',
+      path: '/home/me/.agents/skills/lint-skill/SKILL.md',
+      dir: '/home/me/.agents/skills/lint-skill',
+      isBundle: true,
+      root: 'user-agents',
+      rootPath: '/home/me/.agents/skills',
+      files: 1,
+      bytes: 32,
+      updatedAt: '2026-11-22T00:00:00.000Z',
+      modelInvocable: true,
+      userInvocable: false,
+      valid: true,
+      error: null,
+      category: 'Documentation',
+      author: 'docs writer',
+    },
+    {
+      name: 'review-skill',
+      description: 'Reviews pull requests.',
+      path: '/home/me/.agents/skills/review-skill/SKILL.md',
+      dir: '/home/me/.agents/skills/review-skill',
+      isBundle: true,
+      root: 'user-agents',
+      rootPath: '/home/me/.agents/skills',
+      files: 2,
+      bytes: 96,
+      updatedAt: '2026-11-22T00:00:00.000Z',
+      modelInvocable: true,
+      userInvocable: true,
+      valid: false,
+      error: 'missing metadata',
+      category: 'review',
+      author: 'Dex Horthy',
+    },
   ],
-  totals: { skills: 2, modelInvocable: 2, userInvocable: 1, invalid: 0 },
+  totals: { skills: 4, modelInvocable: 3, userInvocable: 2, invalid: 1 },
   version: '0.2.0',
   platform: 'linux',
 };
+
+// Earlier tests create and duplicate skills. The card-wall tests start from a
+// known deck by restoring this snapshot and refreshing the panel.
+const baseProfile = JSON.parse(JSON.stringify(profile));
 
 const calls = [];
 globalThis.fetch = async (url, init) => {
@@ -112,7 +155,12 @@ globalThis.fetch = async (url, init) => {
     return json({ ok: true, skill: copy, revision: 'rev-5' });
   }
   if (path === '/dsh-skill-deck/annotate') {
-    const fallbackAuthors = { demo: 'Unknown', 'docs-skill': 'Docs Writer' };
+    const fallbackAuthors = {
+      demo: 'Unknown',
+      'docs-skill': 'Docs Writer',
+      'lint-skill': 'docs writer',
+      'review-skill': 'Dex Horthy',
+    };
     profile = {
       ...profile,
       skills: profile.skills.map((skill) => {
@@ -129,6 +177,7 @@ globalThis.fetch = async (url, init) => {
     return json({ ok: true, skill: profile.skills.find((skill) => skill.name === body.name) });
   }
   if (path === '/dsh-skill-deck/signal') return { ok: true, status: 200, json: async () => ({ ok: true }) };
+  if (path === '/dsh-skill-deck/reveal') return json({ ok: true });
   if (path === '/dsh-skill-deck/delete') return json({ ok: true, trashedTo: '/tmp/x' });
   throw new Error('unexpected request ' + path);
 };
@@ -178,6 +227,27 @@ function rowFor(name) {
 
 function buttonIn(row, text) {
   return [...row.querySelectorAll('button')].find((node) => node.textContent?.trim() === text);
+}
+
+function cardFor(name, scope = container) {
+  return [...scope.querySelectorAll('.deck-card')].find((card) => card.dataset.skill === name);
+}
+
+function groupSummaries(scope = container) {
+  return [...scope.querySelectorAll('.deck-group')].map((group) => ({
+    title: group.querySelector('.deck-group-title')?.textContent?.trim(),
+    count: group.querySelector('.deck-group-count')?.textContent?.trim(),
+    cards: [...group.querySelectorAll('.deck-card')].map((card) => card.dataset.skill),
+  }));
+}
+
+async function pick(select, value) {
+  assert.ok(select, 'select exists');
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(dom.window.HTMLSelectElement.prototype, 'value').set.call(select, value);
+    select.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  });
+  await settle();
 }
 
 test('panel loads skills and renders the row', async () => {
@@ -322,6 +392,195 @@ test('clearing category and author restores the fallback labels', async () => {
   assert.deepEqual(annotate?.body, { name: 'demo', category: '', author: '' });
   assert.match(rowFor('demo').textContent, /Uncategorized/);
   assert.match(rowFor('demo').textContent, /Unknown/);
+});
+
+test('the Cards view groups skills by category with counts and a last fallback group', async () => {
+  profile = JSON.parse(JSON.stringify(baseProfile));
+  calls.length = 0;
+  await click(buttonByText('Refresh'));
+
+  assert.ok(buttonByText('List'), 'list view control');
+  assert.ok(buttonByText('Cards'), 'cards view control');
+  const groupBy = container.querySelector('select.deck-groupby');
+  assert.ok(groupBy, 'group-by selector');
+  assert.equal(groupBy.value, 'category', 'category grouping is the default');
+
+  await click(buttonByText('Cards'));
+  assert.equal(buttonByText('Cards')?.getAttribute('aria-pressed'), 'true');
+  assert.equal(buttonByText('List')?.getAttribute('aria-pressed'), 'false');
+  assert.equal(container.querySelectorAll('.deck-row').length, 0, 'list is replaced by cards');
+  assert.equal(container.querySelectorAll('.deck-card').length, 4);
+  assert.deepEqual(groupSummaries(), [
+    { title: 'documentation', count: '2', cards: ['docs-skill', 'lint-skill'] },
+    { title: 'review', count: '1', cards: ['review-skill'] },
+    { title: 'Uncategorized', count: '1', cards: ['demo'] },
+  ]);
+});
+
+test('the group-by selector regroups the cards by author and root', async () => {
+  const groupBy = container.querySelector('select.deck-groupby');
+  await pick(groupBy, 'author');
+  assert.deepEqual(
+    groupSummaries().map((group) => [group.title, group.count]),
+    [
+      ['Docs Writer', '2'],
+      ['Dex Horthy', '1'],
+      ['Unknown', '1'],
+    ],
+  );
+
+  await pick(groupBy, 'root');
+  assert.deepEqual(
+    groupSummaries().map((group) => [group.title, group.count]),
+    [
+      ['user-agents', '2'],
+      ['user-dsh', '2'],
+    ],
+  );
+
+  await pick(groupBy, 'category');
+});
+
+test('each card shows the skill name, description, surfaces, size and validity', async () => {
+  const demoCard = cardFor('demo');
+  assert.ok(demoCard, 'demo card rendered');
+  assert.match(demoCard.textContent, /demo/);
+  assert.match(demoCard.textContent, /A demo skill\./);
+  assert.ok(buttonIn(demoCard, 'Model'), 'model surface toggle');
+  assert.ok(buttonIn(demoCard, 'Slash'), 'slash surface toggle');
+  assert.match(demoCard.textContent, /1 files/);
+  assert.match(demoCard.textContent, /64 B/);
+  assert.match(cardFor('review-skill').textContent, /Needs fixing/);
+});
+
+test('card toggles and actions use the existing routes and confirmation', async () => {
+  calls.length = 0;
+  await click(buttonIn(cardFor('demo'), 'Model'));
+  assert.deepEqual(
+    calls.find((call) => call.path === '/dsh-skill-deck/toggle')?.body,
+    { name: 'demo', surface: 'model', enabled: false },
+  );
+  assert.equal(buttonIn(cardFor('demo'), 'Model')?.getAttribute('aria-pressed'), 'false');
+
+  calls.length = 0;
+  await click(buttonIn(cardFor('demo'), 'Open folder'));
+  assert.ok(calls.some((call) => call.path === '/dsh-skill-deck/reveal'), 'reveal requested');
+
+  calls.length = 0;
+  await click(buttonIn(cardFor('demo'), 'Edit'));
+  assert.ok(calls.some((call) => call.path === '/dsh-skill-deck/read'), 'edit reads the file');
+  assert.ok(container.querySelector('textarea'), 'editor opened from the card');
+  await click(buttonByText('Cancel'));
+  assert.equal(container.querySelector('textarea'), null);
+
+  await click(buttonIn(cardFor('demo'), 'Duplicate'));
+  assert.equal(container.querySelector('.deck-modal input')?.value, 'demo-copy');
+  await click(buttonByText('Cancel'));
+
+  calls.length = 0;
+  await click(buttonIn(cardFor('demo'), 'Remove'));
+  assert.match(container.querySelector('.deck-modal').textContent, /Type the skill name to confirm/);
+  await click(buttonByText('Cancel'));
+  assert.ok(!calls.some((call) => call.path === '/dsh-skill-deck/delete'), 'cancel keeps the skill');
+
+  await click(buttonIn(cardFor('demo'), 'Tag'));
+  const inputs = [...container.querySelectorAll('.deck-modal input')];
+  await act(async () => {
+    setValue(inputs[0], 'review');
+    setValue(inputs[1], 'Dex Horthy');
+  });
+  await settle();
+  calls.length = 0;
+  await click(buttonByText('Save tags'));
+  assert.deepEqual(calls.find((call) => call.path === '/dsh-skill-deck/annotate')?.body, {
+    name: 'demo',
+    category: 'review',
+    author: 'Dex Horthy',
+  });
+  assert.match(cardFor('demo').textContent, /review/);
+  assert.match(cardFor('demo').textContent, /Dex Horthy/);
+  const reviewGroup = groupSummaries().find((group) => group.title === 'review');
+  assert.deepEqual(reviewGroup, { title: 'review', count: '2', cards: ['demo', 'review-skill'] });
+});
+
+test('search and the status filter narrow the working set before grouping', async () => {
+  const search = container.querySelector('input[type="search"]');
+  await act(async () => {
+    setValue(search, 'demo');
+  });
+  await settle();
+  assert.equal(container.querySelectorAll('.deck-card').length, 1);
+  assert.deepEqual(groupSummaries(), [{ title: 'review', count: '1', cards: ['demo'] }]);
+
+  await act(async () => {
+    setValue(search, '');
+  });
+  await settle();
+
+  const filter = container.querySelector('select.deck-filter');
+  assert.ok(filter, 'status filter');
+  await pick(filter, 'invalid');
+  assert.equal(container.querySelectorAll('.deck-card').length, 1);
+  assert.ok(cardFor('review-skill'), 'only the invalid skill remains');
+  assert.deepEqual(groupSummaries(), [{ title: 'review', count: '1', cards: ['review-skill'] }]);
+  await pick(filter, 'all');
+});
+
+test('the Cards view keeps the no-match state', async () => {
+  const search = container.querySelector('input[type="search"]');
+  await act(async () => {
+    setValue(search, 'nope');
+  });
+  await settle();
+  assert.equal(container.querySelectorAll('.deck-card').length, 0);
+  assert.equal(container.querySelectorAll('.deck-group').length, 0);
+  assert.match(container.textContent, /No matching skills/);
+  await act(async () => {
+    setValue(search, '');
+  });
+  await settle();
+});
+
+test('the view and grouping survive a remount', async () => {
+  await pick(container.querySelector('select.deck-groupby'), 'root');
+
+  const otherContainer = document.createElement('div');
+  document.body.appendChild(otherContainer);
+  const otherRoot = createRoot(otherContainer);
+  await act(async () => {
+    otherRoot.render(React.createElement(Panel));
+  });
+  await settle();
+  await settle();
+  assert.equal(otherContainer.querySelectorAll('.deck-row').length, 0, 'cards view restored');
+  assert.ok(otherContainer.querySelectorAll('.deck-card').length > 0);
+  assert.equal(otherContainer.querySelector('select.deck-groupby').value, 'root');
+  assert.deepEqual(
+    [...otherContainer.querySelectorAll('.deck-group-title')].map((node) => node.textContent.trim()),
+    ['user-agents', 'user-dsh'],
+  );
+  await act(async () => {
+    otherRoot.unmount();
+  });
+  otherContainer.remove();
+
+  await click(buttonByText('List'));
+  const listContainer = document.createElement('div');
+  document.body.appendChild(listContainer);
+  const listRoot = createRoot(listContainer);
+  await act(async () => {
+    listRoot.render(React.createElement(Panel));
+  });
+  await settle();
+  await settle();
+  assert.equal(listContainer.querySelectorAll('.deck-row').length, 4, 'list view restored');
+  assert.equal(listContainer.querySelectorAll('.deck-card').length, 0);
+  assert.equal(listContainer.querySelector('select.deck-groupby').value, 'root');
+  await act(async () => {
+    listRoot.unmount();
+  });
+  listContainer.remove();
+  await click(buttonByText('Cards'));
 });
 
 test('cleanup', async () => {
