@@ -29,7 +29,7 @@ const module = captured.factory((id) => {
   assert.equal(id, 'react');
   return React;
 });
-const { SkillRow, Panel, CreateDialog, DuplicateDialog, DiagFooter } = module.components;
+const { SkillRow, Panel, DeckPage, DeckIcon, CreateDialog, DuplicateDialog, DiagFooter } = module.components;
 
 const skill = {
   name: 'demo-skill',
@@ -87,6 +87,26 @@ test('Panel renders its loading state without a backend', () => {
   const markup = renderToStaticMarkup(React.createElement(Panel));
   assert.match(markup, /正在读取技能/);
   assert.match(markup, /技能/);
+});
+
+test('DeckIcon renders at both sidebar sizes and reflects the active state', () => {
+  const inactive = renderToStaticMarkup(React.createElement(DeckIcon, { size: 16, active: false }));
+  assert.match(inactive, /<svg[^>]*class="deck-icon"[^>]*width="16"[^>]*height="16"/);
+  assert.match(inactive, /aria-hidden="true"/);
+  assert.doesNotMatch(inactive, /deck-icon active/);
+
+  const active = renderToStaticMarkup(React.createElement(DeckIcon, { size: 20, active: true }));
+  assert.match(active, /<svg[^>]*class="deck-icon active"[^>]*width="20"[^>]*height="20"/);
+
+  const defaulted = renderToStaticMarkup(React.createElement(DeckIcon, {}));
+  assert.match(defaulted, /width="18"[^>]*height="18"/);
+});
+
+test('DeckPage wraps the existing deck panel in the page container', () => {
+  const markup = renderToStaticMarkup(React.createElement(DeckPage));
+  assert.match(markup, /class="deck-page"/);
+  assert.match(markup, /class="deck"/);
+  assert.match(markup, /正在读取技能/);
 });
 
 test('DuplicateDialog pre-fills the copied name and explains the copy', () => {
