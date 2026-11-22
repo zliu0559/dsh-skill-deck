@@ -130,6 +130,18 @@ window.__ModuleLoader__.load({
       renaming: '重命名中…',
       seriesRenamed: '系列已重命名',
       unassignedHint: '把技能拖到这里可以移出系列。',
+      movedTo: '已移到',
+      movedOut: '已移出系列',
+      undo: '撤销',
+      undone: '已撤销移动',
+      moveToSeries: '移到系列',
+      dropToSeries: '移入',
+      dropToUnassigned: '移出系列',
+      dropToNewSeries: '松开以新建系列',
+      newSeriesZone: '拖到这里新建系列。',
+      newSeriesTitle: '新建系列',
+      newSeriesHint: '技能会加入这个系列；已有同名系列会直接沿用。',
+      newSeriesAction: '创建并移入',
     };
 
     const en = {
@@ -242,6 +254,18 @@ window.__ModuleLoader__.load({
       renaming: 'Renaming…',
       seriesRenamed: 'Series renamed',
       unassignedHint: 'Drag a skill here to remove it from its series.',
+      movedTo: 'Moved to',
+      movedOut: 'Removed from series',
+      undo: 'Undo',
+      undone: 'Move undone',
+      moveToSeries: 'Move to series',
+      dropToSeries: 'Assign to',
+      dropToUnassigned: 'Remove from series',
+      dropToNewSeries: 'Drop to create a new series',
+      newSeriesZone: 'Drop a skill here to create a new series.',
+      newSeriesTitle: 'New series',
+      newSeriesHint: 'The skill joins this series; an existing name is reused as-is.',
+      newSeriesAction: 'Create and move',
     };
 
     const language = (navigator.language || 'en').toLowerCase();
@@ -295,6 +319,13 @@ window.__ModuleLoader__.load({
       .deck-map-tile:hover { border-color: var(--dsw-alias-border-l1, rgba(127,127,127,.45)); filter: brightness(.98); }
       .deck-map-tile:focus-visible { outline: 2px solid var(--dsw-focus-ring-color, #3b82f6); outline-offset: 2px; }
       .deck-map-tile:disabled { opacity: .6; cursor: default; }
+      .deck-map-tile[draggable='true'] { cursor: grab; }
+      .deck-map.is-dragging .deck-map-tile:active { cursor: grabbing; }
+      .deck-map-module.is-dimmed { opacity: .42; }
+      .deck-map-module.is-drop-target { border-color: var(--dsw-alias-state-business-primary, #3b82f6); box-shadow: 0 0 0 2px rgba(59,130,246,.35); }
+      .deck-map-drop-label { padding: 2px 0; font-size: 11px; font-weight: 600; color: var(--dsw-alias-state-business-primary, #3b82f6); }
+      .deck-map-newseries { padding: 10px 12px; border: 1px dashed var(--dsw-alias-border-l2, rgba(127,127,127,.3)); border-radius: var(--dsw-radius-md, 8px); font-size: 11px; color: var(--dsw-alias-label-tertiary, inherit); }
+      .deck-map-newseries.is-drop-target { border-color: var(--dsw-alias-state-business-primary, #3b82f6); background: rgba(59,130,246,.08); color: var(--dsw-alias-state-business-primary, #3b82f6); font-weight: 600; }
       .deck-map-tile-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; font-weight: 600; }
       .deck-map-tile-badges { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; overflow: hidden; }
       .deck-map-tile-badges .deck-badge { height: 16px; padding: 0 5px; font-size: 9px; }
@@ -348,8 +379,11 @@ window.__ModuleLoader__.load({
       .deck-field .deck-input, .deck-field .deck-select { width: 100%; min-width: 0; }
       .deck-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding-top: 10px; border-top: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.2)); }
       .deck-foot .deck-btn { height: 24px; padding: 0 9px; font-size: 11px; margin-left: auto; }
-      .deck-toast { position: fixed; right: 24px; bottom: 24px; z-index: 70; padding: 10px 14px; border-radius: var(--dsw-radius-md, 8px); background: #111827; color: #f9fafb; font-size: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+      .deck-toast { position: fixed; right: 24px; bottom: 24px; z-index: 70; display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: var(--dsw-radius-md, 8px); background: #111827; color: #f9fafb; font-size: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
       .deck-toast.error { background: #7f1d1d; }
+      .deck-toast-action { height: 24px; padding: 0 10px; border-radius: 999px; border: 1px solid rgba(249,250,251,.45); background: transparent; color: inherit; font-size: 11px; font-weight: 600; cursor: pointer; }
+      .deck-toast-action:hover { background: rgba(249,250,251,.14); }
+      .deck-toast-action:focus-visible { outline: 2px solid #f9fafb; outline-offset: 2px; }
       .deck-page { box-sizing: border-box; height: 100%; min-height: 0; overflow: auto; padding: 28px clamp(20px, 4vw, 48px) 32px; }
       [data-platform='darwin'] .deck-page { padding-top: calc(28px + var(--dsh-frame-top-clearance, 0px)); }
       .deck-page > .deck { width: 100%; max-width: 960px; margin: 0 auto; }
@@ -561,6 +595,29 @@ window.__ModuleLoader__.load({
       return String(a.name).localeCompare(String(b.name), undefined, { sensitivity: 'base' });
     }
 
+    /** Read the dragged skill name back; state is only a last-resort fallback. */
+    function readDraggedName(event) {
+      const transfer = event.dataTransfer;
+      if (!transfer || typeof transfer.getData !== 'function') return '';
+      for (const type of ['application/x-dsh-skill', 'text/plain']) {
+        try {
+          const value = String(transfer.getData(type) || '').trim();
+          if (value) return value;
+        } catch {
+          /* a browser may restrict this type; try the next one */
+        }
+      }
+      return '';
+    }
+
+    /** The label follows the pointer and names the series it will land in. */
+    function dropLabelFor(target) {
+      if (!target) return '';
+      if (target.kind === 'new') return t('dropToNewSeries');
+      if (target.kind === 'unassigned') return t('dropToUnassigned');
+      return t('dropToSeries') + ' · ' + target.label;
+    }
+
     const MAP_COMPACT_QUERY = '(max-width: 640px), (pointer: coarse), (any-pointer: coarse)';
 
     function hasTouchPointer() {
@@ -635,14 +692,28 @@ window.__ModuleLoader__.load({
      * compact layout replaces it with a sticky details strip.
      */
     function SkillMap(props) {
-      const { groups, busy, onEdit, rootLabels, onRenameSeries } = props;
+      const {
+        groups,
+        busy,
+        onEdit,
+        rootLabels,
+        onRenameSeries,
+        onMove,
+        onAnnotate,
+        seriesSuggestions,
+      } = props;
       const compact = useCompactMap();
       const [hovered, setHovered] = useState(null);
       const [focused, setFocused] = useState(null);
       const [selected, setSelected] = useState(null);
       const [placement, setPlacement] = useState(null);
+      const [drag, setDrag] = useState(null);
+      const [target, setTarget] = useState(null);
+      const [newSeries, setNewSeries] = useState(null);
       const tileRefs = useRef(new Map());
       const popoverRef = useRef(null);
+      const boardRef = useRef(null);
+      const dragRef = useRef(null);
 
       const skills = useMemo(() => groups.flatMap((group) => group.skills), [groups]);
       const byName = useMemo(() => new Map(skills.map((skill) => [skill.name, skill])), [skills]);
@@ -717,6 +788,107 @@ window.__ModuleLoader__.load({
         else setSelected(skill.name);
       };
 
+      // Drag state lives in a ref too, so a drop can read the source even when
+      // React has not committed the dragstart render yet.
+      const endDrag = () => {
+        dragRef.current = null;
+        setDrag(null);
+        setTarget(null);
+      };
+
+      const beginDrag = (event, skill) => {
+        const transfer = event.dataTransfer;
+        if (transfer) {
+          transfer.effectAllowed = 'move';
+          try {
+            transfer.setData('application/x-dsh-skill', skill.name);
+            transfer.setData('text/plain', skill.name);
+          } catch {
+            /* a browser may refuse; the ref still carries the source */
+          }
+        }
+        const next = { name: skill.name, fromSeries: skill.manualSeries ?? skill.series ?? '' };
+        dragRef.current = next;
+        setDrag(next);
+      };
+
+      const targetForModule = (group) => ({
+        kind: group.fallback ? 'unassigned' : 'series',
+        key: group.key,
+        label: group.label,
+        series: group.fallback ? '' : group.label,
+      });
+
+      const hoverTarget = (event, next) => {
+        if (!dragRef.current) return;
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+        setTarget((current) =>
+          current && current.kind === next.kind && current.key === next.key ? current : next,
+        );
+      };
+
+      const leaveTarget = (event, key) => {
+        if (!dragRef.current) return;
+        const to = event.relatedTarget;
+        if (to && event.currentTarget.contains(to)) return;
+        setTarget((current) => (current && current.key === key ? null : current));
+      };
+
+      /** A drop always assigns a series; it never changes tile order. */
+      const handleDrop = (event, next) => {
+        if (!dragRef.current) return;
+        event.preventDefault();
+        const active = dragRef.current;
+        const name = readDraggedName(event) || active.name;
+        const skill = byName.get(name) ?? null;
+        endDrag();
+        if (!skill) return;
+        if (next.kind === 'new') {
+          setNewSeries({ skill, value: '' });
+          return;
+        }
+        onMove(skill, next.series);
+      };
+
+      // Repeated dragover events near an edge turn into continuous scrolling.
+      const handleBoardDragOver = (event) => {
+        if (!dragRef.current) return;
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+        const board = boardRef.current;
+        if (!board) return;
+        const box = board.getBoundingClientRect();
+        if (!box || !(box.height > 0)) return;
+        const margin = 56;
+        const step = 24;
+        let delta = 0;
+        if (event.clientY > box.bottom - margin) delta = step;
+        else if (event.clientY < box.top + margin) delta = -step;
+        if (!delta) return;
+        const page = typeof board.closest === 'function' ? board.closest('.deck-page') : null;
+        if (page) {
+          if (typeof page.scrollBy === 'function') page.scrollBy(0, delta);
+          else page.scrollTop += delta;
+        } else if (typeof window.scrollBy === 'function') {
+          window.scrollBy(0, delta);
+        }
+      };
+
+      const submitNewSeries = () => {
+        if (!newSeries) return;
+        const value = newSeries.value.trim();
+        if (!value) return;
+        // Typing an existing name in another case selects that series rather
+        // than creating a near-duplicate spelling.
+        const existing = (seriesSuggestions || []).find(
+          (option) => option.toLowerCase() === value.toLowerCase(),
+        );
+        const skill = newSeries.skill;
+        setNewSeries(null);
+        onMove(skill, existing ?? value);
+      };
+
       const renderTile = (skill) => {
         const status = mapStatus(skill);
         const size = formatBytes(skill.bytes);
@@ -729,12 +901,15 @@ window.__ModuleLoader__.load({
             className: 'deck-map-tile status-' + status,
             'data-skill': skill.name,
             'data-status': status,
+            draggable: true,
             title: skill.name,
             'aria-label': label,
             'aria-pressed': compact ? (selected === skill.name ? 'true' : 'false') : undefined,
             disabled: busy === skill.name + ':read',
             ref: tileRef(skill.name),
             style: { backgroundColor: MAP_STATUS_TINT[status] },
+            onDragStart: (event) => beginDrag(event, skill),
+            onDragEnd: endDrag,
             onMouseEnter: () => setHovered(skill.name),
             onMouseLeave: () => setHovered((current) => (current === skill.name ? null : current)),
             onFocus: () => setFocused(skill.name),
@@ -808,6 +983,15 @@ window.__ModuleLoader__.load({
                   h(
                     'button',
                     {
+                      key: 'move',
+                      className: 'deck-btn',
+                      onClick: () => onAnnotate && onAnnotate(selectedSkill),
+                    },
+                    t('moveToSeries'),
+                  ),
+                  h(
+                    'button',
+                    {
                       key: 'edit',
                       className: 'deck-btn primary',
                       onClick: () => onEdit(selectedSkill),
@@ -821,9 +1005,20 @@ window.__ModuleLoader__.load({
 
       return h(
         'div',
-        { className: 'deck-map', role: 'group', 'aria-label': t('mapLabel') },
+        {
+          className: 'deck-map' + (drag ? ' is-dragging' : ''),
+          role: 'group',
+          'aria-label': t('mapLabel'),
+          ref: boardRef,
+          onDragOver: handleBoardDragOver,
+        },
         modules.map((group) => {
           const empty = group.count === 0;
+          const moduleTarget = targetForModule(group);
+          const isTarget = Boolean(target) && target.key === group.key;
+          // While a drag is live every other module recedes, so the target is
+          // unmistakable even when the pointer is between tiles.
+          const dimmed = Boolean(drag) && !isTarget;
           return h(
             'section',
             {
@@ -831,9 +1026,15 @@ window.__ModuleLoader__.load({
               className:
                 'deck-map-module' +
                 (group.fallback ? ' unassigned' : '') +
-                (empty ? ' is-empty' : ''),
+                (empty ? ' is-empty' : '') +
+                (isTarget ? ' is-drop-target' : '') +
+                (dimmed ? ' is-dimmed' : ''),
               'data-series': group.key,
               'data-unassigned': group.fallback ? 'true' : 'false',
+              'data-drop-target': isTarget ? 'true' : undefined,
+              onDragOver: (event) => hoverTarget(event, moduleTarget),
+              onDragLeave: (event) => leaveTarget(event, group.key),
+              onDrop: (event) => handleDrop(event, moduleTarget),
             },
             h(
               'div',
@@ -859,6 +1060,13 @@ window.__ModuleLoader__.load({
                     t('renameSeries'),
                   ),
             ),
+            isTarget
+              ? h(
+                  'div',
+                  { className: 'deck-map-drop-label', 'data-drop-label': 'true' },
+                  dropLabelFor(target),
+                )
+              : null,
             empty
               ? h('div', { className: 'deck-map-dropzone' }, t('unassignedHint'))
               : h(
@@ -868,6 +1076,24 @@ window.__ModuleLoader__.load({
                 ),
           );
         }),
+        h(
+          'div',
+          {
+            className: 'deck-map-newseries' + (target && target.kind === 'new' ? ' is-drop-target' : ''),
+            'data-new-series': 'true',
+            'data-drop-target': target && target.kind === 'new' ? 'true' : undefined,
+            onDragOver: (event) =>
+              hoverTarget(event, { kind: 'new', key: '\u0000new', label: t('newSeriesZone') }),
+            onDragLeave: (event) => leaveTarget(event, '\u0000new'),
+            onDrop: (event) =>
+              handleDrop(event, { kind: 'new', key: '\u0000new', label: t('newSeriesZone') }),
+          },
+          h(
+            'span',
+            target && target.kind === 'new' ? { 'data-drop-label': 'true' } : null,
+            target && target.kind === 'new' ? t('dropToNewSeries') : t('newSeriesZone'),
+          ),
+        ),
         h(
           'div',
           { className: 'deck-map-legend', role: 'list', 'aria-label': t('mapStatusLegend') },
@@ -892,6 +1118,16 @@ window.__ModuleLoader__.load({
         ),
         popover,
         strip,
+        newSeries
+          ? h(NewSeriesDialog, {
+              skill: newSeries.skill,
+              value: newSeries.value,
+              suggestions: seriesSuggestions,
+              onChange: (value) => setNewSeries((current) => (current ? { ...current, value } : current)),
+              onSubmit: submitNewSeries,
+              onClose: () => setNewSeries(null),
+            })
+          : null,
       );
     }
 
@@ -1373,6 +1609,57 @@ window.__ModuleLoader__.load({
       );
     }
 
+    function NewSeriesDialog(props) {
+      const { skill, value, suggestions, onChange, onSubmit, onClose } = props;
+      const listId = NS + '-new-series-suggestions';
+      return h(
+        Modal,
+        { title: t('newSeriesTitle') + ' · ' + skill.name, onClose },
+        h(
+          'div',
+          { className: 'deck-modal-body' },
+          h(
+            'label',
+            { className: 'deck-field' },
+            h('span', { className: 'deck-field-label' }, t('annotationSeries')),
+            h('input', {
+              className: 'deck-input',
+              value,
+              list: listId,
+              spellCheck: false,
+              autoFocus: true,
+              'aria-label': t('annotationSeries'),
+              onChange: (event) => onChange(event.target.value),
+              onKeyDown: (event) => {
+                if (event.key === 'Enter' && value.trim() !== '') onSubmit();
+              },
+            }),
+            h(
+              'datalist',
+              { id: listId },
+              (suggestions || []).map((option) => h('option', { key: option, value: option })),
+            ),
+            h('span', { className: 'deck-note' }, t('newSeriesHint')),
+          ),
+        ),
+        h(
+          'div',
+          { className: 'deck-modal-foot' },
+          h('span', { className: 'deck-note' }, skill.path),
+          h(
+            'div',
+            { style: { display: 'flex', gap: 8 } },
+            h('button', { className: 'deck-btn', onClick: onClose }, t('cancel')),
+            h(
+              'button',
+              { className: 'deck-btn primary', disabled: value.trim() === '', onClick: onSubmit },
+              t('newSeriesAction'),
+            ),
+          ),
+        ),
+      );
+    }
+
     function RenameSeriesDialog(props) {
       const { from, value, busy, error, onChange, onSubmit, onClose } = props;
       return h(
@@ -1462,10 +1749,10 @@ window.__ModuleLoader__.load({
       const [copied, setCopied] = useState(false);
       const toastTimer = useRef(null);
 
-      const notify = useCallback((message, kind) => {
+      const notify = useCallback((message, kind, action) => {
         if (toastTimer.current) clearTimeout(toastTimer.current);
-        setToast({ message, kind: kind || 'ok' });
-        toastTimer.current = setTimeout(() => setToast(null), 2600);
+        setToast({ message, kind: kind || 'ok', action: action ?? null });
+        toastTimer.current = setTimeout(() => setToast(null), action ? 8000 : 2600);
       }, []);
 
       const chooseView = useCallback((next) => {
@@ -1518,6 +1805,56 @@ window.__ModuleLoader__.load({
           skills: prev.skills.map((item) => (item.name === skill.name ? skill : item)),
         }));
       }, []);
+
+      // Series is manual-only, so both effective and manual values move together.
+      const setSkillSeries = useCallback((name, series) => {
+        setState((prev) => ({
+          ...prev,
+          skills: prev.skills.map((item) =>
+            item.name === name ? { ...item, series, manualSeries: series } : item,
+          ),
+        }));
+      }, []);
+
+      const undoMove = useCallback(
+        async (name, previousSeries) => {
+          try {
+            const payload = await api('/annotate', { name, series: previousSeries });
+            if (payload.skill) replaceSkill(payload.skill);
+            notify(t('undone'));
+          } catch (error) {
+            notify(error.message, 'error');
+          }
+        },
+        [notify, replaceSkill],
+      );
+
+      /**
+       * Optimistic drag move: the board moves first, the annotation write
+       * follows, and only a failure puts the skill back. A successful move
+       * leaves an undo toast that writes the previous series back.
+       */
+      const moveSkill = useCallback(
+        async (skill, series) => {
+          const previous = skill.manualSeries ?? skill.series ?? '';
+          const next = String(series ?? '');
+          if (previous.trim().toLowerCase() === next.trim().toLowerCase()) return;
+          setSkillSeries(skill.name, next);
+          try {
+            const payload = await api('/annotate', { name: skill.name, series: next });
+            if (payload.skill) replaceSkill(payload.skill);
+            notify(
+              next ? t('movedTo') + ' · ' + next : t('movedOut'),
+              'ok',
+              { label: t('undo'), onClick: () => undoMove(skill.name, previous) },
+            );
+          } catch (error) {
+            setSkillSeries(skill.name, previous);
+            notify(error.message || t('unknownError'), 'error');
+          }
+        },
+        [notify, replaceSkill, setSkillSeries, undoMove],
+      );
 
       const openDuplicate = useCallback((skill) => {
         setDuplicating(skill);
@@ -1866,6 +2203,9 @@ window.__ModuleLoader__.load({
                     onEdit: openEditor,
                     rootLabels,
                     onRenameSeries: openRenameSeries,
+                    onMove: moveSkill,
+                    onAnnotate: openAnnotation,
+                    seriesSuggestions,
                   })
                 : view === 'cards'
                   ? h(SkillCardWall, { groups: cardGroups, cardProps: skillProps })
@@ -2118,7 +2458,33 @@ window.__ModuleLoader__.load({
               onClose: () => setCreating(false),
             })
           : null,
-        toast ? h('div', { className: 'deck-toast' + (toast.kind === 'error' ? ' error' : ''), role: 'status' }, toast.message) : null,
+        toast
+          ? h(
+              'div',
+              {
+                className: 'deck-toast' + (toast.kind === 'error' ? ' error' : ''),
+                role: 'status',
+                'data-kind': toast.kind,
+              },
+              h('span', null, toast.message),
+              toast.action
+                ? h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'deck-toast-action',
+                      onClick: () => {
+                        const action = toast.action;
+                        if (toastTimer.current) clearTimeout(toastTimer.current);
+                        setToast(null);
+                        action.onClick();
+                      },
+                    },
+                    toast.action.label,
+                  )
+                : null,
+            )
+          : null,
       );
     }
 
@@ -2181,6 +2547,7 @@ window.__ModuleLoader__.load({
         DuplicateDialog,
         AnnotationDialog,
         RenameSeriesDialog,
+        NewSeriesDialog,
         DiagFooter,
       },
     };

@@ -139,6 +139,10 @@ let profile = {
 const baseProfile = JSON.parse(JSON.stringify(profile));
 
 const calls = [];
+// Drag tests can hold an annotate request open to observe the optimistic board,
+// and hand the next annotate call a failure to observe the rollback.
+let annotateGate = null;
+let annotateFailure = null;
 globalThis.fetch = async (url, init) => {
   const path = String(url).replace('http://127.0.0.1:52603', '');
   const body = init?.body ? JSON.parse(init.body) : null;
@@ -175,12 +179,25 @@ globalThis.fetch = async (url, init) => {
     return json({ ok: true, skill: copy, revision: 'rev-5' });
   }
   if (path === '/dsh-skill-deck/annotate') {
+    if (annotateGate) await annotateGate.promise;
+    if (annotateFailure) {
+      const failure = annotateFailure;
+      annotateFailure = null;
+      return {
+        ok: false,
+        status: failure.status ?? 500,
+        json: async () => ({ ok: false, error: failure.message ?? 'write failed' }),
+      };
+    }
     const fallbackAuthors = {
       demo: 'Unknown',
       'docs-skill': 'Docs Writer',
       'lint-skill': 'docs writer',
       'review-skill': 'Dex Horthy',
     };
+    // Omitted fields stay untouched, so a drag move can send only name+series.
+    const category = typeof body.category === 'string' ? body.category.trim() : undefined;
+    const author = typeof body.author === 'string' ? body.author.trim() : undefined;
     const series = typeof body.series === 'string' ? body.series.trim() : undefined;
     const previousSeries =
       typeof body.previousSeries === 'string' ? body.previousSeries.trim().toLowerCase() : '';
@@ -194,16 +211,15 @@ globalThis.fetch = async (url, init) => {
           return { ...skill, series: series ?? '', manualSeries: series ?? '' };
         }
         if (skill.name !== body.name) return skill;
-        const category = body.category.trim();
-        const author = body.author.trim();
         return {
           ...skill,
-          category: category || 'Uncategorized',
-          author: author || fallbackAuthors[skill.name] || 'Unknown',
-          series: series === undefined ? skill.series : series,
-          manualCategory: category,
-          manualAuthor: author,
-          manualSeries: series === undefined ? skill.manualSeries : series,
+          ...(category === undefined
+            ? {}
+            : { category: category || 'Uncategorized', manualCategory: category }),
+          ...(author === undefined
+            ? {}
+            : { author: author || fallbackAuthors[skill.name] || 'Unknown', manualAuthor: author }),
+          ...(series === undefined ? {} : { series, manualSeries: series }),
         };
       }),
     };
@@ -428,6 +444,121 @@ function stubCompactLayout() {
   return () => {
     dom.window.matchMedia = original;
   };
+}
+
+/**
+ * Hold the next annotate request open so a test can observe the optimistic
+ * board before the write settles. Returns a release function.
+ */
+function gateAnnotate() {
+  let release;
+  annotateGate = {
+    promise: new Promise((resolve) => {
+      release = resolve;
+    }),
+  };
+  return () => {
+    annotateGate = null;
+    release();
+  };
+}
+
+/**
+ * jsdom does not implement DataTransfer. A plain stub is enough: the client
+ * only stores the skill name and reads it back on drop.
+ */
+function makeDragData(name) {
+  const data = new Map();
+  if (name) {
+    data.set('application/x-dsh-skill', name);
+    data.set('text/plain', name);
+  }
+  return {
+    effectAllowed: '',
+    dropEffect: '',
+    setData(type, value) {
+      data.set(type, String(value));
+    },
+    getData(type) {
+      return data.get(type) ?? '';
+    },
+  };
+}
+
+function dragEvent(type, dataTransfer, props = {}) {
+  const event = new dom.window.Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperty(event, 'dataTransfer', { value: dataTransfer });
+  for (const [key, value] of Object.entries(props)) {
+    Object.defineProperty(event, key, { value, configurable: true });
+  }
+  return event;
+}
+
+async function dragStart(tile, data = makeDragData(tile.dataset.skill)) {
+  assert.ok(tile, 'drag source exists');
+  await act(async () => {
+    tile.dispatchEvent(dragEvent('dragstart', data));
+  });
+  await settle();
+  return data;
+}
+
+async function dragOver(target, data, props = {}) {
+  assert.ok(target, 'drop target exists');
+  await act(async () => {
+    target.dispatchEvent(dragEvent('dragover', data, props));
+  });
+  await settle();
+}
+
+async function dropOn(target, data, props = {}) {
+  assert.ok(target, 'drop target exists');
+  await act(async () => {
+    target.dispatchEvent(dragEvent('drop', data, props));
+  });
+  await settle();
+}
+
+async function dragEnd(tile, data = makeDragData()) {
+  assert.ok(tile, 'drag source exists');
+  await act(async () => {
+    tile.dispatchEvent(dragEvent('dragend', data));
+  });
+  await settle();
+}
+
+/** Give the board a viewport box so edge auto-scroll can be measured. */
+function stubBoardGeometry(rect = { top: 100, height: 400 }) {
+  const proto = dom.window.HTMLElement.prototype;
+  const original = proto.getBoundingClientRect;
+  proto.getBoundingClientRect = function measuredBoard() {
+    if (this.classList?.contains('deck-map')) {
+      return {
+        left: 0,
+        top: rect.top,
+        width: 800,
+        height: rect.height,
+        right: 800,
+        bottom: rect.top + rect.height,
+        x: 0,
+        y: rect.top,
+        toJSON() {
+          return this;
+        },
+      };
+    }
+    return original.call(this);
+  };
+  return () => {
+    proto.getBoundingClientRect = original;
+  };
+}
+
+async function ensureMapView(scope = container) {
+  const mapButton = buttonInScope(scope, 'Map');
+  assert.ok(mapButton, 'map view control');
+  if (mapButton.getAttribute('aria-pressed') !== 'true') await click(mapButton);
+  assert.ok(scope.querySelector('.deck-map'), 'the map view is rendered');
 }
 
 test('panel loads skills and renders the row', async () => {
@@ -1559,6 +1690,385 @@ test('the Map view keeps loading and error states usable', async () => {
     error.node.remove();
   } finally {
     globalThis.fetch = realFetch;
+  }
+});
+
+test('dragging a tile onto a series module moves it optimistically and offers undo', async () => {
+  profile = JSON.parse(JSON.stringify(baseProfile));
+  calls.length = 0;
+  await click(buttonByText('Refresh'));
+  await ensureMapView();
+
+  const release = gateAnnotate();
+  const data = await dragStart(mapTileFor('demo'));
+  await dragOver(mapModuleFor('Docs'), data);
+  await dropOn(mapModuleFor('Docs'), data);
+
+  // The write is still pending; the tile already sits in Docs.
+  assert.deepEqual(
+    mapModules().map((module) => [module.title, module.count, module.tiles]),
+    [
+      ['Docs', '3', ['demo', 'docs-skill', 'lint-skill']],
+      ['Reviewers', '1', ['review-skill']],
+      ['Unassigned', '0', []],
+    ],
+    'the board updates before the request resolves',
+  );
+  release();
+  await settle();
+
+  const annotate = calls.find((call) => call.path === '/dsh-skill-deck/annotate');
+  assert.deepEqual(annotate?.body, { name: 'demo', series: 'Docs' });
+
+  const toast = container.querySelector('.deck-toast');
+  assert.ok(toast, 'a success toast appears');
+  assert.match(toast.textContent, /Moved to/);
+  assert.match(toast.textContent, /Docs/);
+  const undo = buttonInScope(toast, 'Undo');
+  assert.ok(undo, 'the success toast offers undo');
+
+  calls.length = 0;
+  await click(undo);
+  assert.deepEqual(calls.find((call) => call.path === '/dsh-skill-deck/annotate')?.body, {
+    name: 'demo',
+    series: '',
+  });
+  assert.deepEqual(
+    mapModules().map((module) => [module.title, module.tiles]),
+    [
+      ['Docs', ['docs-skill', 'lint-skill']],
+      ['Reviewers', ['review-skill']],
+      ['Unassigned', ['demo']],
+    ],
+    'undo restores the previous series',
+  );
+  assert.match(container.querySelector('.deck-toast')?.textContent ?? '', /Move undone/);
+
+  profile = JSON.parse(JSON.stringify(baseProfile));
+  await click(buttonByText('Refresh'));
+});
+
+test('dropping a tile on the unassigned module clears its series and undo restores it', async () => {
+  profile = JSON.parse(JSON.stringify(baseProfile));
+  calls.length = 0;
+  await click(buttonByText('Refresh'));
+  await ensureMapView();
+
+  const data = await dragStart(mapTileFor('docs-skill'));
+  await dragOver(mapModuleFor('Unassigned'), data);
+  await dropOn(mapModuleFor('Unassigned'), data);
+
+  assert.deepEqual(calls.find((call) => call.path === '/dsh-skill-deck/annotate')?.body, {
+    name: 'docs-skill',
+    series: '',
+  });
+  assert.deepEqual(
+    mapModules().map((module) => [module.title, module.tiles]),
+    [
+      ['docs', ['lint-skill']],
+      ['Reviewers', ['review-skill']],
+      ['Unassigned', ['demo', 'docs-skill']],
+    ],
+    'the skill leaves its module and joins the unassigned bucket; the remaining spelling wins',
+  );
+  assert.match(container.querySelector('.deck-toast')?.textContent ?? '', /Removed from series/);
+
+  const undo = buttonInScope(container.querySelector('.deck-toast'), 'Undo');
+  calls.length = 0;
+  await click(undo);
+  assert.deepEqual(calls.find((call) => call.path === '/dsh-skill-deck/annotate')?.body, {
+    name: 'docs-skill',
+    series: 'Docs',
+  });
+  assert.deepEqual(
+    mapModules().map((module) => [module.title, module.tiles]),
+    [
+      ['Docs', ['docs-skill', 'lint-skill']],
+      ['Reviewers', ['review-skill']],
+      ['Unassigned', ['demo']],
+    ],
+    'undo restores the previous series',
+  );
+
+  profile = JSON.parse(JSON.stringify(baseProfile));
+  await click(buttonByText('Refresh'));
+});
+
+test('the new-series drop zone opens a name dialog and creates or reuses a series', async () => {
+  profile = JSON.parse(JSON.stringify(baseProfile));
+  calls.length = 0;
+  await click(buttonByText('Refresh'));
+  await ensureMapView();
+
+  const zone = container.querySelector('.deck-map-newseries');
+  assert.ok(zone, 'the board exposes a new-series drop zone');
+  const data = await dragStart(mapTileFor('demo'));
+  await dragOver(zone, data);
+  await dropOn(zone, data);
+
+  let dialog = container.querySelector('.deck-modal');
+  assert.ok(dialog, 'dropping on the zone opens a name dialog');
+  assert.match(dialog.textContent, /New series/);
+  assert.match(dialog.textContent, /demo/);
+  const input = dialog.querySelector('input');
+  const options = [...dialog.querySelectorAll('datalist option')].map((option) => option.value);
+  assert.ok(options.includes('Docs'), 'existing series are offered: ' + options.join(','));
+  assert.equal(input.value, '', 'the field starts empty');
+
+  await act(async () => {
+    setValue(input, 'Fresh Series');
+  });
+  await settle();
+  calls.length = 0;
+  await click(buttonInScope(dialog, 'Create and move'));
+
+  assert.deepEqual(calls.find((call) => call.path === '/dsh-skill-deck/annotate')?.body, {
+    name: 'demo',
+    series: 'Fresh Series',
+  });
+  assert.equal(container.querySelector('.deck-modal'), null, 'the dialog closes after the move');
+  assert.deepEqual(
+    mapModules().map((module) => [module.title, module.tiles]),
+    [
+      ['Docs', ['docs-skill', 'lint-skill']],
+      ['Fresh Series', ['demo']],
+      ['Reviewers', ['review-skill']],
+      ['Unassigned', []],
+    ],
+    'the dropped skill created and joined the new series',
+  );
+
+  // Typing a differently-cased existing name selects that series instead of
+  // creating a near-duplicate.
+  const second = await dragStart(mapTileFor('review-skill'));
+  await dragOver(container.querySelector('.deck-map-newseries'), second);
+  await dropOn(container.querySelector('.deck-map-newseries'), second);
+  dialog = container.querySelector('.deck-modal');
+  assert.ok(dialog, 'the dialog opens for the second drop');
+  await act(async () => {
+    setValue(dialog.querySelector('input'), 'docs');
+  });
+  await settle();
+  calls.length = 0;
+  await click(buttonInScope(dialog, 'Create and move'));
+  assert.deepEqual(calls.find((call) => call.path === '/dsh-skill-deck/annotate')?.body, {
+    name: 'review-skill',
+    series: 'Docs',
+  });
+  assert.deepEqual(
+    mapModules().map((module) => [module.title, module.tiles]),
+    [
+      ['Docs', ['docs-skill', 'lint-skill', 'review-skill']],
+      ['Fresh Series', ['demo']],
+      ['Unassigned', []],
+    ],
+    'the existing series absorbed the skill',
+  );
+
+  // Cancel is a real escape hatch: no write, no move.
+  const third = await dragStart(mapTileFor('lint-skill'));
+  await dragOver(container.querySelector('.deck-map-newseries'), third);
+  await dropOn(container.querySelector('.deck-map-newseries'), third);
+  calls.length = 0;
+  await click(buttonInScope(container.querySelector('.deck-modal'), 'Cancel'));
+  assert.equal(container.querySelector('.deck-modal'), null);
+  assert.ok(!calls.some((call) => call.path === '/dsh-skill-deck/annotate'), 'cancel writes nothing');
+
+  profile = JSON.parse(JSON.stringify(baseProfile));
+  await click(buttonByText('Refresh'));
+});
+
+test('dragging highlights the target, dims other modules, labels the drop and auto-scrolls', async () => {
+  profile = JSON.parse(JSON.stringify(baseProfile));
+  calls.length = 0;
+  await click(buttonByText('Refresh'));
+  await ensureMapView();
+
+  const restoreGeometry = stubBoardGeometry({ top: 100, height: 400 });
+  const scrollCalls = [];
+  const originalScrollBy = dom.window.scrollBy;
+  dom.window.scrollBy = (...args) => {
+    scrollCalls.push(args);
+  };
+  try {
+    const data = await dragStart(mapTileFor('demo'));
+    assert.ok(container.querySelector('.deck-map').classList.contains('is-dragging'));
+    assert.equal(
+      container.querySelectorAll('.deck-map-module.is-dimmed').length,
+      3,
+      'every module recedes before a target is hovered',
+    );
+
+    await dragOver(mapModuleFor('Docs'), data, { clientY: 120 });
+    const target = mapModuleFor('Docs');
+    assert.ok(target.classList.contains('is-drop-target'), 'the target module is highlighted');
+    assert.equal(target.dataset.dropTarget, 'true');
+    const label = target.querySelector('.deck-map-drop-label');
+    assert.ok(label, 'the target shows a drop label');
+    assert.equal(label.textContent.trim(), 'Assign to · Docs', 'the label names the target series');
+    for (const title of ['Reviewers', 'Unassigned']) {
+      assert.ok(mapModuleFor(title).classList.contains('is-dimmed'), title + ' is dimmed');
+      assert.notEqual(mapModuleFor(title).dataset.dropTarget, 'true');
+    }
+    assert.ok(scrollCalls.some((args) => args[1] < 0), 'hovering the top edge scrolls up');
+
+    scrollCalls.length = 0;
+    await dragOver(mapModuleFor('Docs'), data, { clientY: 480 });
+    assert.ok(scrollCalls.some((args) => args[1] > 0), 'hovering the bottom edge scrolls down');
+
+    scrollCalls.length = 0;
+    await dragOver(mapModuleFor('Docs'), data, { clientY: 300 });
+    assert.equal(scrollCalls.length, 0, 'the middle of the board does not auto-scroll');
+
+    await dragOver(mapModuleFor('Unassigned'), data, { clientY: 300 });
+    const unassignedLabel = mapModuleFor('Unassigned').querySelector('.deck-map-drop-label');
+    assert.equal(unassignedLabel?.textContent.trim(), 'Remove from series');
+    assert.ok(!mapModuleFor('Docs').classList.contains('is-drop-target'));
+
+    await dragEnd(mapTileFor('demo'), data);
+    assert.equal(container.querySelector('.deck-map-module.is-drop-target'), null);
+    assert.equal(container.querySelector('.deck-map-module.is-dimmed'), null);
+    assert.equal(container.querySelector('.deck-map-drop-label'), null);
+    assert.ok(!container.querySelector('.deck-map').classList.contains('is-dragging'));
+    assert.deepEqual(mapModules().map((module) => module.tiles), [
+      ['docs-skill', 'lint-skill'],
+      ['review-skill'],
+      ['demo'],
+    ]);
+  } finally {
+    restoreGeometry();
+    dom.window.scrollBy = originalScrollBy;
+  }
+});
+
+test('a failed move rolls the board back and shows an error toast', async () => {
+  profile = JSON.parse(JSON.stringify(baseProfile));
+  calls.length = 0;
+  await click(buttonByText('Refresh'));
+  await ensureMapView();
+
+  annotateFailure = { status: 500, message: 'write failed' };
+  const data = await dragStart(mapTileFor('demo'));
+  await dragOver(mapModuleFor('Docs'), data);
+  await dropOn(mapModuleFor('Docs'), data);
+  await settle();
+
+  assert.ok(mapTileFor('demo', mapModuleFor('Unassigned')), 'the tile returns to Unassigned');
+  assert.equal(mapTileFor('demo', mapModuleFor('Docs')), undefined);
+  assert.deepEqual(
+    mapModules().map((module) => [module.title, module.count]),
+    [
+      ['Docs', '2'],
+      ['Reviewers', '1'],
+      ['Unassigned', '1'],
+    ],
+    'the board is unchanged after the rollback',
+  );
+  const toast = container.querySelector('.deck-toast');
+  assert.ok(toast, 'an error toast appears');
+  assert.ok(toast.classList.contains('error'));
+  assert.match(toast.textContent, /write failed/);
+  assert.equal(buttonInScope(toast, 'Undo'), undefined, 'a failed move offers no undo');
+  assert.equal(annotateFailure, null, 'the injected failure was consumed');
+
+  profile = JSON.parse(JSON.stringify(baseProfile));
+  await click(buttonByText('Refresh'));
+});
+
+test('only skill tiles are draggable, and a same-series drop neither reorders nor writes', async () => {
+  profile = JSON.parse(JSON.stringify(baseProfile));
+  await click(buttonByText('Refresh'));
+  await ensureMapView();
+
+  for (const tile of mapTiles()) {
+    assert.equal(tile.getAttribute('draggable'), 'true', 'every skill tile is draggable');
+  }
+  for (const module of [...container.querySelectorAll('.deck-map-module')]) {
+    assert.notEqual(module.getAttribute('draggable'), 'true', 'modules are not draggable');
+    assert.ok(!module.classList.contains('deck-map-tile'));
+  }
+  const zone = container.querySelector('.deck-map-newseries');
+  assert.notEqual(zone.getAttribute('draggable'), 'true', 'the new-series zone is a drop target only');
+
+  calls.length = 0;
+  const data = await dragStart(mapTileFor('lint-skill'));
+  await dragOver(mapModuleFor('Docs'), data);
+  await dropOn(mapModuleFor('Docs'), data);
+  await settle();
+  assert.ok(
+    !calls.some((call) => call.path === '/dsh-skill-deck/annotate'),
+    'dropping inside the current series is a no-op',
+  );
+  assert.deepEqual(mapModules()[0].tiles, ['docs-skill', 'lint-skill'], 'tile order is untouched');
+  assert.doesNotMatch(
+    container.querySelector('.deck-toast')?.textContent ?? '',
+    /Moved to/,
+    'a no-op does not announce a move',
+  );
+});
+
+test('the touch strip Move to series action and the keyboard path reach the annotation dialog', async () => {
+  profile = JSON.parse(JSON.stringify(baseProfile));
+  await click(buttonByText('Refresh'));
+  const restoreMatchMedia = stubCompactLayout();
+  const otherContainer = document.createElement('div');
+  document.body.appendChild(otherContainer);
+  const otherRoot = createRoot(otherContainer);
+  try {
+    await act(async () => {
+      otherRoot.render(React.createElement(Panel));
+    });
+    await settle();
+    await settle();
+    await ensureMapView(otherContainer);
+    assert.ok(otherContainer.querySelector('.deck-map-strip'), 'compact layout shows the details strip');
+
+    // Tiles are buttons, so keyboard users can select one with Enter/Space.
+    assert.equal(mapTileFor('demo', otherContainer).tagName, 'BUTTON');
+    await click(mapTileFor('demo', otherContainer));
+    const strip = otherContainer.querySelector('.deck-map-strip');
+    assert.match(strip.textContent, /demo/);
+
+    const move = buttonInScope(strip, 'Move to series');
+    assert.ok(move, 'the strip exposes Move to series');
+    await focusNode(move);
+    assert.equal(document.activeElement, move, 'the action is keyboard reachable');
+
+    calls.length = 0;
+    await click(move);
+    const dialog = otherContainer.querySelector('.deck-modal');
+    assert.ok(dialog, 'Move to series opens the annotation dialog');
+    const inputs = [...dialog.querySelectorAll('input')];
+    assert.equal(inputs.length, 3, 'the dialog keeps the category, author and series fields');
+    await act(async () => {
+      setValue(inputs[2], 'Docs');
+    });
+    await settle();
+    await click(buttonInScope(dialog, 'Save tags'));
+
+    assert.deepEqual(calls.find((call) => call.path === '/dsh-skill-deck/annotate')?.body, {
+      name: 'demo',
+      category: '',
+      author: '',
+      series: 'Docs',
+    });
+    assert.deepEqual(
+      mapModules(otherContainer).map((module) => [module.title, module.tiles]),
+      [
+        ['Docs', ['demo', 'docs-skill', 'lint-skill']],
+        ['Reviewers', ['review-skill']],
+        ['Unassigned', []],
+      ],
+      'the non-drag path moves the skill without a drag',
+    );
+  } finally {
+    await act(async () => {
+      otherRoot.unmount();
+    });
+    otherContainer.remove();
+    restoreMatchMedia();
+    profile = JSON.parse(JSON.stringify(baseProfile));
+    await click(buttonByText('Refresh'));
   }
 });
 
