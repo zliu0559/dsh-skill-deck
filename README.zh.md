@@ -14,6 +14,7 @@ DSH 从磁盘发现技能并热加载，但改动只能手动编辑文件。技�
 - **改开关不用碰 YAML**：「模型」写 `disable-model-invocation`，「命令」写 `user-invocable`，文件其余字节原样保留。
 - **编辑整份文档**：`SKILL.md` 全文本编辑，原子写入，并带修订值校验，避免覆盖外部改动。
 - **新建技能**：填一个名字和一句话描述，插件写入合法的 `SKILL.md` 并直接打开编辑器。
+- **复制技能**：整目录复制成新名字，并把 frontmatter 的 `name` 改写为副本名。
 - 面板底部显示插件版本、平台、各根目录的技能数，并有「复制诊断信息」按钮，出问题时可直接贴给我。
 - **删除是安全的**：技能目录会被移动到 `~/.dsh/skills-trash/`，不会直接销毁。
 
@@ -87,7 +88,17 @@ Host API 是同源 JSON，通过 `webServer.register` 挂载；每个写操作�
 
 - 项目级目录（`<repo>/.dsh/skills`）+ 工作区切换。
 - 从 GitHub `owner/repo` 直接安装技能，而不只是编辑本地已有技能。
-- 复制现有技能作为变体的起点。
+- 有了项目级目录之后，再按根目录过滤。
+
+## 发布
+
+`main` 放已发布代码，`develop` 集成进行中的工作。版本遵循 SemVer，每次发布都是一个 `vX.Y.Z` 标签，并自动生成 GitHub Release。安装固定版本：
+
+```text
+https://github.com/zliu0559/dsh-skill-deck/archive/refs/tags/v0.3.0.tar.gz
+```
+
+完整流程见 [docs/RELEASING.md](docs/RELEASING.md)。
 
 ## 许可
 

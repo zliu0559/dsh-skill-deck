@@ -1,6 +1,26 @@
 # Changelog
 
-## 0.2.0 — unreleased
+All notable changes to this plugin are documented here. Versions follow
+[Semantic Versioning](https://semver.org/), and every released version is a
+`vX.Y.Z` tag on `main`. See [docs/RELEASING.md](docs/RELEASING.md) for the
+branch and release flow.
+
+## Unreleased
+
+- Nothing yet.
+
+## 0.3.0 — 2026-11-22
+
+- **Duplicate** action on every skill row: copies the whole bundle (or the flat
+  `.md` file) under a new kebab-case name and rewrites the `name:` field, so the
+  copy is immediately valid.
+- The duplicate dialog pre-fills `<name>-copy`, refuses collisions and invalid
+  names, and reloads the list so the new copy appears in place.
+- Release engineering: `docs/RELEASING.md` documents the `main`/`develop` model,
+  the SemVer rules, and the tag-based release checklist; a `Release` workflow
+  publishes GitHub release notes from a `v*` tag.
+
+## 0.2.0 — 2026-11-22
 
 - **New skill** button: create a skill from a name and a one-line description,
   in `~/.dsh/skills` or `~/.agents/skills`, then land straight in the editor.

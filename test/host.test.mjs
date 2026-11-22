@@ -74,7 +74,7 @@ function call(path, options) {
 
 test('exports a cordis plugin and mounts every route', () => {
   assert.equal(name, 'dsh-skill-deck');
-  for (const path of ['/state', '/diag', '/create', '/signal', '/read', '/save', '/toggle', '/delete', '/reveal']) {
+  for (const path of ['/state', '/diag', '/create', '/duplicate', '/signal', '/read', '/save', '/toggle', '/delete', '/reveal']) {
     assert.ok(routes.has('/dsh-skill-deck' + path), path);
   }
 });
@@ -108,6 +108,22 @@ test('diagnostics report the client registry when it is available', async () => 
   assert.equal(payload.ok, true);
   assert.equal(typeof payload.version, 'string');
   assert.equal(payload.client.available, false, 'no client registry in this fake context');
+});
+
+test('duplicate copies a skill and refuses a collision', async () => {
+  const first = await call('/duplicate', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', host: '127.0.0.1:1' },
+    body: JSON.stringify({ name: 'demo', newName: 'demo-copy' }),
+  });
+  assert.equal(first.status, 200);
+  assert.equal(JSON.parse(first.body).skill.name, 'demo-copy');
+  const second = await call('/duplicate', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', host: '127.0.0.1:1' },
+    body: JSON.stringify({ name: 'demo', newName: 'demo-copy' }),
+  });
+  assert.equal(second.status, 409);
 });
 
 test('the browser half can report that it loaded and rendered', async () => {

@@ -8,7 +8,7 @@ const home = mkdtempSync(join(tmpdir(), 'skill-deck-'));
 process.env.DSH_HOME = home;
 process.env.DSH_AGENTS_HOME = join(home, 'agents');
 
-const { listSkills, readSkill, removeSkill, saveSkill, toggleSkill, createSkill } = await import('../lib/store.js');
+const { listSkills, readSkill, removeSkill, saveSkill, toggleSkill, createSkill, duplicateSkill } = await import('../lib/store.js');
 
 function writeSkill(name, extra = '') {
   const dir = join(home, 'skills', name);
@@ -119,6 +119,36 @@ test('discovers a skill behind a junction', async (t) => {
   assert.ok(linked);
   assert.equal(linked.isBundle, true);
   assert.equal(linked.description, 'Linked.');
+});
+
+test('duplicates a skill, copies its assets and rewrites the name', async () => {
+  await createSkill({ name: 'dup-source', description: 'Source skill: with a colon' });
+  const result = await duplicateSkill({ name: 'dup-source', newName: 'dup-copy' });
+  assert.equal(result.skill.name, 'dup-copy');
+  assert.equal(result.skill.description, 'Source skill: with a colon');
+  const copied = readFileSync(join(home, 'skills', 'dup-copy', 'SKILL.md'), 'utf8');
+  assert.match(copied, /^name: dup-copy$/m);
+  assert.ok(existsSync(join(home, 'skills', 'dup-copy', 'SKILL.md')));
+  await assert.rejects(
+    () => duplicateSkill({ name: 'dup-source', newName: 'dup-copy' }),
+    (error) => error.status === 409,
+  );
+  await assert.rejects(
+    () => duplicateSkill({ name: 'dup-source', newName: 'Bad Name' }),
+    (error) => error.status === 400,
+  );
+  await assert.rejects(
+    () => duplicateSkill({ name: 'dup-source', newName: 'dup-source' }),
+    (error) => error.status === 400,
+  );
+});
+
+test('duplicates a flat skill file into a new flat file', async () => {
+  writeFileSync(join(home, 'skills', 'flat-one.md'), '---\nname: flat-one\ndescription: Flat.\n---\n\n# Flat\n', 'utf8');
+  const result = await duplicateSkill({ name: 'flat-one', newName: 'flat-two' });
+  assert.equal(result.skill.name, 'flat-two');
+  const copy = readFileSync(join(home, 'skills', 'flat-two.md'), 'utf8');
+  assert.match(copy, /^name: flat-two$/m);
 });
 
 test('creates a valid skill and refuses duplicates or bad names', async () => {

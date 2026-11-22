@@ -29,7 +29,7 @@ const module = captured.factory((id) => {
   assert.equal(id, 'react');
   return React;
 });
-const { SkillRow, Panel, CreateDialog, DiagFooter } = module.components;
+const { SkillRow, Panel, CreateDialog, DuplicateDialog, DiagFooter } = module.components;
 
 const skill = {
   name: 'demo-skill',
@@ -87,6 +87,23 @@ test('Panel renders its loading state without a backend', () => {
   const markup = renderToStaticMarkup(React.createElement(Panel));
   assert.match(markup, /正在读取技能/);
   assert.match(markup, /技能/);
+});
+
+test('DuplicateDialog pre-fills the copied name and explains the copy', () => {
+  const markup = renderToStaticMarkup(
+    React.createElement(DuplicateDialog, {
+      source: skill,
+      name: 'demo-skill-copy',
+      busy: false,
+      error: '',
+      onName: noop,
+      onSubmit: noop,
+      onClose: noop,
+    }),
+  );
+  assert.match(markup, /复制技能/);
+  assert.match(markup, /value="demo-skill-copy"/);
+  assert.match(markup, /创建副本/);
 });
 
 test('DiagFooter shows the version, root counts and a copy action', () => {

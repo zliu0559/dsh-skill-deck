@@ -8,6 +8,7 @@
  */
 import {
   createSkill,
+  duplicateSkill,
   listSkills,
   readSkill,
   removeSkill,
@@ -223,6 +224,15 @@ export function apply(ctx) {
         name: String(payload.name ?? ''),
         description: String(payload.description ?? ''),
         scope: typeof payload.scope === 'string' ? payload.scope : undefined,
+      });
+      sendJson(response, 200, { ok: true, ...result });
+    });
+
+    route('/duplicate', async (request, response) => {
+      const payload = await readJson(request);
+      const result = await duplicateSkill({
+        name: String(payload.name ?? ''),
+        newName: String(payload.newName ?? ''),
       });
       sendJson(response, 200, { ok: true, ...result });
     });
