@@ -87,6 +87,13 @@ markup.
 
 The Host API is same-origin JSON, mounted through `webServer.register`, and every mutating request re-discovers the skill by name before touching a path, so a request cannot address a file outside the managed roots.
 
+## Diagnostics
+
+`GET /dsh-skill-deck/diag` reports the plugin version, whether an open page ever
+loaded and rendered the browser half, and — when the Host exposes its client
+registry — the composed bundle entry, revision, and URL. It is the fastest way to
+tell "the page never loaded this plugin" apart from "the panel is broken".
+
 ## Security
 
 The routes are local-only, same-origin, and refuse non-JSON writes; a request

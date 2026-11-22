@@ -74,7 +74,7 @@ function call(path, options) {
 
 test('exports a cordis plugin and mounts every route', () => {
   assert.equal(name, 'dsh-skill-deck');
-  for (const path of ['/state', '/create', '/signal', '/read', '/save', '/toggle', '/delete', '/reveal']) {
+  for (const path of ['/state', '/diag', '/create', '/signal', '/read', '/save', '/toggle', '/delete', '/reveal']) {
     assert.ok(routes.has('/dsh-skill-deck' + path), path);
   }
 });
@@ -99,6 +99,15 @@ test('read returns content and a revision', async () => {
   assert.equal(payload.ok, true);
   assert.match(payload.content, /# Demo/);
   assert.match(payload.revision, /^[0-9a-f]{16}$/);
+});
+
+test('diagnostics report the client registry when it is available', async () => {
+  const result = await call('/diag');
+  assert.equal(result.status, 200);
+  const payload = JSON.parse(result.body);
+  assert.equal(payload.ok, true);
+  assert.equal(typeof payload.version, 'string');
+  assert.equal(payload.client.available, false, 'no client registry in this fake context');
 });
 
 test('the browser half can report that it loaded and rendered', async () => {

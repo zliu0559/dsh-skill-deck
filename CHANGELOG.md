@@ -8,6 +8,8 @@
   description when it needs it) and refuses duplicate or non-kebab-case names.
 - A footer shows the plugin version, platform, and how many skills each root
   holds, with a **Copy diagnostics** action for bug reports.
+- The browser half pings `/signal` when it loads and when the panel renders, so
+  `/state` and `/diag` can distinguish "never loaded" from "loaded but empty".
 - The panel is covered by a jsdom interaction test: typing filters the list, the
   model switch posts the expected toggle, editing saves the typed content with
   its revision, and the create dialog posts the new skill.

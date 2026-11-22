@@ -177,6 +177,37 @@ export function apply(ctx) {
       });
     });
 
+    route('/diag', async (request, response) => {
+      let client = { available: false };
+      try {
+        const modules = ctx.get('clientModules');
+        if (modules && typeof modules.graph === 'function') {
+          const graph = modules.graph() ?? {};
+          const ids = Array.isArray(graph.entries)
+            ? graph.entries
+            : Array.isArray(graph.application)
+              ? graph.application
+              : [];
+          const mine = ids.find((entry) => entry && entry.id === 'dsh-skill-deck') ?? null;
+          client = {
+            available: true,
+            graphKeys: Object.keys(graph),
+            entry: mine ? { id: mine.id, rev: mine.rev, url: mine.url ?? null } : null,
+            entries: ids.length,
+            clientPath: typeof modules.clientPath === 'function' ? (modules.clientPath('dsh-skill-deck') ?? null) : null,
+          };
+        }
+      } catch (error) {
+        client = { available: false, error: String(error && error.message ? error.message : error) };
+      }
+      sendJson(response, 200, {
+        ok: true,
+        version: pluginVersion(),
+        signals: clientSignals,
+        client,
+      });
+    });
+
     route('/signal', async (request, response) => {
       const payload = await readJson(request);
       if (payload.kind !== 'loaded' && payload.kind !== 'rendered') {
