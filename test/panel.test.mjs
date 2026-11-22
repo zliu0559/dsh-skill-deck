@@ -250,6 +250,27 @@ async function pick(select, value) {
   await settle();
 }
 
+function mapBlocks(scope = container) {
+  return [...scope.querySelectorAll('.deck-map-block')];
+}
+
+function mapBlockFor(name, scope = container) {
+  return mapBlocks(scope).find((block) => block.dataset.skill === name);
+}
+
+function blockArea(block) {
+  assert.ok(block, 'map block exists');
+  return parseFloat(block.style.width) * parseFloat(block.style.height);
+}
+
+function legendEntries(scope = container) {
+  return [...scope.querySelectorAll('.deck-legend-item')].map((item) => ({
+    label: item.querySelector('.deck-legend-label')?.textContent?.trim(),
+    count: item.querySelector('.deck-legend-count')?.textContent?.trim(),
+    color: item.querySelector('.deck-legend-swatch')?.style.backgroundColor,
+  }));
+}
+
 test('panel loads skills and renders the row', async () => {
   await act(async () => {
     root.render(React.createElement(Panel));
@@ -581,6 +602,303 @@ test('the view and grouping survive a remount', async () => {
   });
   listContainer.remove();
   await click(buttonByText('Cards'));
+});
+
+test('the Map view renders every visible skill as an accessible block', async () => {
+  profile = JSON.parse(JSON.stringify(baseProfile));
+  await click(buttonByText('Refresh'));
+  await pick(container.querySelector('select.deck-groupby'), 'category');
+  assert.ok(buttonByText('Map'), 'map view control');
+
+  await click(buttonByText('Map'));
+  assert.equal(buttonByText('Map')?.getAttribute('aria-pressed'), 'true');
+  assert.equal(buttonByText('List')?.getAttribute('aria-pressed'), 'false');
+  assert.equal(buttonByText('Cards')?.getAttribute('aria-pressed'), 'false');
+  assert.equal(container.querySelectorAll('.deck-row').length, 0, 'list is replaced by the map');
+  assert.equal(container.querySelectorAll('.deck-card').length, 0, 'cards are replaced by the map');
+  assert.ok(container.querySelector('.deck-map'), 'map rendered');
+
+  const blocks = mapBlocks();
+  assert.deepEqual(
+    blocks.map((block) => block.dataset.skill).sort(),
+    ['demo', 'docs-skill', 'lint-skill', 'review-skill'],
+  );
+  for (const block of blocks) {
+    assert.equal(block.tagName, 'BUTTON', 'every map block is a button');
+    const name = block.dataset.skill;
+    const label = block.getAttribute('aria-label') || '';
+    assert.match(label, new RegExp(name), 'accessible name carries the skill name');
+    assert.match(label, /\d+ B/, 'accessible name carries the size');
+    const details = block.querySelector('.deck-map-details');
+    assert.ok(details, 'details element rendered');
+    assert.match(details.textContent, new RegExp(name));
+    assert.match(details.textContent, /\d+ B/);
+  }
+  assert.match(mapBlockFor('demo').getAttribute('aria-label'), /64 B/);
+  assert.match(mapBlockFor('docs-skill').getAttribute('aria-label'), /128 B/);
+});
+
+test('map block area is proportional to bundle bytes', async () => {
+  const bytesByName = { demo: 64, 'docs-skill': 128, 'lint-skill': 32, 'review-skill': 96 };
+  const totalBytes = Object.values(bytesByName).reduce((sum, bytes) => sum + bytes, 0);
+  for (const [name, bytes] of Object.entries(bytesByName)) {
+    const share = blockArea(mapBlockFor(name)) / 10000;
+    assert.ok(
+      Math.abs(share - bytes / totalBytes) < 0.001,
+      name + ' covers ' + share.toFixed(4) + ' of the map, expected ' + (bytes / totalBytes).toFixed(4),
+    );
+  }
+});
+
+test('map blocks tile the canvas without overlaps or gaps', async () => {
+  const boxes = mapBlocks().map((block) => ({
+    name: block.dataset.skill,
+    left: parseFloat(block.style.left),
+    top: parseFloat(block.style.top),
+    width: parseFloat(block.style.width),
+    height: parseFloat(block.style.height),
+  }));
+  let covered = 0;
+  for (const box of boxes) {
+    assert.ok(box.left >= -1e-6 && box.top >= -1e-6, box.name + ' starts inside the canvas');
+    assert.ok(box.left + box.width <= 100 + 1e-6, box.name + ' stays within the canvas width');
+    assert.ok(box.top + box.height <= 100 + 1e-6, box.name + ' stays within the canvas height');
+    covered += box.width * box.height;
+  }
+  assert.ok(Math.abs(covered - 10000) < 0.01, 'blocks cover the whole canvas');
+  for (let i = 0; i < boxes.length; i += 1) {
+    for (let j = i + 1; j < boxes.length; j += 1) {
+      const a = boxes[i];
+      const b = boxes[j];
+      const overlapWidth = Math.min(a.left + a.width, b.left + b.width) - Math.max(a.left, b.left);
+      const overlapHeight = Math.min(a.top + a.height, b.top + b.height) - Math.max(a.top, b.top);
+      const overlap = Math.max(0, overlapWidth) * Math.max(0, overlapHeight);
+      assert.ok(overlap < 1e-6, a.name + ' and ' + b.name + ' do not overlap');
+    }
+  }
+});
+
+test('map blocks fall back from bytes to file count and then to equal area', async () => {
+  profile = {
+    ...JSON.parse(JSON.stringify(baseProfile)),
+    skills: [
+      { ...baseProfile.skills[0], name: 'bytes-skill', bytes: 50, files: 1 },
+      { ...baseProfile.skills[0], name: 'files-skill', bytes: 0, files: 3 },
+      { ...baseProfile.skills[0], name: 'empty-skill', bytes: 0, files: 0 },
+    ],
+    totals: { ...baseProfile.totals, skills: 3 },
+  };
+  await click(buttonByText('Refresh'));
+  assert.equal(mapBlocks().length, 3, 'fallback deck rendered');
+
+  const totalWeight = 50 + 3 + 1;
+  const expected = { 'bytes-skill': 50, 'files-skill': 3, 'empty-skill': 1 };
+  for (const [name, weight] of Object.entries(expected)) {
+    const share = blockArea(mapBlockFor(name)) / 10000;
+    assert.ok(
+      Math.abs(share - weight / totalWeight) < 0.001,
+      name + ' covers ' + share.toFixed(4) + ', expected ' + (weight / totalWeight).toFixed(4),
+    );
+  }
+  assert.ok(blockArea(mapBlockFor('files-skill')) > blockArea(mapBlockFor('empty-skill')));
+
+  profile = JSON.parse(JSON.stringify(baseProfile));
+  await click(buttonByText('Refresh'));
+});
+
+test('clicking a map block opens the editor and the map exposes no destructive actions', async () => {
+  const blocks = mapBlocks();
+  assert.equal(container.querySelectorAll('.deck-map button').length, blocks.length, 'only blocks are buttons');
+  assert.equal(container.querySelector('.deck-map .deck-btn.danger'), null, 'no destructive control');
+  assert.doesNotMatch(container.querySelector('.deck-map').textContent, /Remove|Duplicate|Tag|Open folder/);
+
+  calls.length = 0;
+  await click(mapBlockFor('demo'));
+  const read = calls.find((call) => call.path === '/dsh-skill-deck/read');
+  assert.deepEqual(read?.body, { name: 'demo' }, 'the map block reads its skill');
+  assert.ok(container.querySelector('textarea'), 'editor opened from the map');
+  await click(buttonByText('Cancel'));
+  assert.equal(container.querySelector('textarea'), null, 'editor closed');
+});
+
+test('map colors follow the grouping dimension and a legend decodes them', async () => {
+  assert.deepEqual(
+    legendEntries().map((entry) => [entry.label, entry.count]),
+    [
+      ['documentation', '2'],
+      ['review', '1'],
+      ['Uncategorized', '1'],
+    ],
+  );
+  const colorFor = (label) => legendEntries().find((entry) => entry.label === label)?.color;
+  assert.ok(colorFor('documentation'), 'legend swatch has a color');
+  assert.equal(new Set([colorFor('documentation'), colorFor('review'), colorFor('Uncategorized')]).size, 3);
+  assert.equal(mapBlockFor('docs-skill').style.backgroundColor, colorFor('documentation'));
+  assert.equal(mapBlockFor('lint-skill').style.backgroundColor, colorFor('documentation'));
+  assert.equal(mapBlockFor('review-skill').style.backgroundColor, colorFor('review'));
+  assert.equal(mapBlockFor('demo').style.backgroundColor, colorFor('Uncategorized'));
+
+  await pick(container.querySelector('select.deck-groupby'), 'author');
+  assert.deepEqual(
+    legendEntries().map((entry) => [entry.label, entry.count]),
+    [
+      ['Docs Writer', '2'],
+      ['Dex Horthy', '1'],
+      ['Unknown', '1'],
+    ],
+  );
+  assert.equal(
+    mapBlockFor('demo').style.backgroundColor,
+    legendEntries().find((entry) => entry.label === 'Unknown')?.color,
+  );
+  assert.equal(
+    mapBlockFor('docs-skill').style.backgroundColor,
+    legendEntries().find((entry) => entry.label === 'Docs Writer')?.color,
+  );
+
+  await pick(container.querySelector('select.deck-groupby'), 'root');
+  assert.deepEqual(
+    legendEntries().map((entry) => [entry.label, entry.count]),
+    [
+      ['user-agents', '2'],
+      ['user-dsh', '2'],
+    ],
+  );
+  await pick(container.querySelector('select.deck-groupby'), 'category');
+});
+
+test('search and the status filter narrow the map and its legend', async () => {
+  const search = container.querySelector('input[type="search"]');
+  await act(async () => {
+    setValue(search, 'demo');
+  });
+  await settle();
+  assert.deepEqual(mapBlocks().map((block) => block.dataset.skill), ['demo']);
+  assert.deepEqual(
+    legendEntries().map((entry) => [entry.label, entry.count]),
+    [['Uncategorized', '1']],
+  );
+
+  await act(async () => {
+    setValue(search, '');
+  });
+  await settle();
+  assert.equal(mapBlocks().length, 4, 'clearing the search restores every block');
+
+  await pick(container.querySelector('select.deck-filter'), 'invalid');
+  assert.deepEqual(mapBlocks().map((block) => block.dataset.skill), ['review-skill']);
+  assert.deepEqual(
+    legendEntries().map((entry) => [entry.label, entry.count]),
+    [['review', '1']],
+  );
+  await pick(container.querySelector('select.deck-filter'), 'all');
+  assert.equal(mapBlocks().length, 4);
+});
+
+test('the Map view keeps the no-match and empty states', async () => {
+  const search = container.querySelector('input[type="search"]');
+  await act(async () => {
+    setValue(search, 'nope');
+  });
+  await settle();
+  assert.equal(mapBlocks().length, 0);
+  assert.equal(legendEntries().length, 0);
+  assert.match(container.textContent, /No matching skills/);
+  await act(async () => {
+    setValue(search, '');
+  });
+  await settle();
+
+  profile = {
+    ...JSON.parse(JSON.stringify(baseProfile)),
+    skills: [],
+    totals: { skills: 0, modelInvocable: 0, userInvocable: 0, invalid: 0 },
+  };
+  await click(buttonByText('Refresh'));
+  assert.match(container.textContent, /No skills yet/);
+  assert.equal(mapBlocks().length, 0);
+
+  profile = JSON.parse(JSON.stringify(baseProfile));
+  await click(buttonByText('Refresh'));
+});
+
+test('the Map view and grouping survive a remount', async () => {
+  await pick(container.querySelector('select.deck-groupby'), 'author');
+
+  const otherContainer = document.createElement('div');
+  document.body.appendChild(otherContainer);
+  const otherRoot = createRoot(otherContainer);
+  await act(async () => {
+    otherRoot.render(React.createElement(Panel));
+  });
+  await settle();
+  await settle();
+  assert.ok(otherContainer.querySelector('.deck-map'), 'map view restored');
+  assert.equal(otherContainer.querySelectorAll('.deck-map-block').length, 4);
+  assert.equal(otherContainer.querySelector('select.deck-groupby').value, 'author');
+  assert.deepEqual(
+    [...otherContainer.querySelectorAll('.deck-legend-label')].map((node) => node.textContent.trim()),
+    ['Docs Writer', 'Dex Horthy', 'Unknown'],
+  );
+  await act(async () => {
+    otherRoot.unmount();
+  });
+  otherContainer.remove();
+  await pick(container.querySelector('select.deck-groupby'), 'category');
+});
+
+test('the Map view keeps loading and error states usable', async () => {
+  const realFetch = globalThis.fetch;
+  const makeContainer = () => {
+    const node = document.createElement('div');
+    document.body.appendChild(node);
+    return { node, root: createRoot(node) };
+  };
+
+  try {
+    globalThis.fetch = (url, init) =>
+      String(url).endsWith('/state') ? new Promise(() => {}) : realFetch(url, init);
+    const loading = makeContainer();
+    await act(async () => {
+      loading.root.render(React.createElement(Panel));
+    });
+    await settle();
+    assert.match(loading.node.textContent, /Reading skills/);
+    assert.equal(loading.node.querySelectorAll('.deck-view .deck-btn').length, 3, 'view switcher stays usable');
+    await act(async () => {
+      loading.root.unmount();
+    });
+    loading.node.remove();
+
+    globalThis.fetch = async (url, init) => {
+      if (String(url).endsWith('/state')) {
+        return { ok: false, status: 500, json: async () => ({ ok: false, error: 'boom' }) };
+      }
+      return realFetch(url, init);
+    };
+    const error = makeContainer();
+    await act(async () => {
+      error.root.render(React.createElement(Panel));
+    });
+    await settle();
+    assert.match(error.node.textContent, /Could not load skills/);
+    assert.match(error.node.textContent, /boom/);
+    const retry = [...error.node.querySelectorAll('button')].find((node) => node.textContent?.trim() === 'Retry');
+    assert.ok(retry, 'retry action rendered');
+
+    globalThis.fetch = realFetch;
+    await act(async () => {
+      retry.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    });
+    await settle();
+    assert.ok(error.node.querySelector('.deck-map'), 'retry recovers into the map view');
+    await act(async () => {
+      error.root.unmount();
+    });
+    error.node.remove();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });
 
 test('cleanup', async () => {
