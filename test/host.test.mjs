@@ -285,6 +285,19 @@ test('state falls back through metadata.author and metadata.credits.author', asy
   assert.equal(stateSkill(payload, 'authored').manualAuthor, '', 'frontmatter authors stay out of manual values');
   assert.equal(stateSkill(payload, 'credited').author, 'Credit Author');
   assert.equal(stateSkill(payload, 'both-authored').author, 'Front Author');
+
+  assert.equal(plain.authorSource, null, 'a skill without frontmatter provenance reports null');
+  assert.equal(
+    stateSkill(payload, 'authored').authorSource,
+    'metadata.author',
+    'the suggestion heuristic can tell a direct author from credits',
+  );
+  assert.equal(stateSkill(payload, 'credited').authorSource, 'metadata.credits.author');
+  assert.equal(
+    stateSkill(payload, 'both-authored').authorSource,
+    'metadata.author',
+    'metadata.author keeps its precedence in the provenance field',
+  );
 });
 
 const jsonHeaders = { 'content-type': 'application/json', host: '127.0.0.1:1' };

@@ -182,6 +182,8 @@ globalThis.fetch = async (url, init) => {
       'review-skill': 'Dex Horthy',
     };
     const series = typeof body.series === 'string' ? body.series.trim() : undefined;
+    const category = typeof body.category === 'string' ? body.category.trim() : undefined;
+    const author = typeof body.author === 'string' ? body.author.trim() : undefined;
     const previousSeries =
       typeof body.previousSeries === 'string' ? body.previousSeries.trim().toLowerCase() : '';
     profile = {
@@ -194,15 +196,14 @@ globalThis.fetch = async (url, init) => {
           return { ...skill, series: series ?? '', manualSeries: series ?? '' };
         }
         if (skill.name !== body.name) return skill;
-        const category = body.category.trim();
-        const author = body.author.trim();
         return {
           ...skill,
-          category: category || 'Uncategorized',
-          author: author || fallbackAuthors[skill.name] || 'Unknown',
+          category: category === undefined ? skill.category : category || 'Uncategorized',
+          author:
+            author === undefined ? skill.author : author || fallbackAuthors[skill.name] || 'Unknown',
           series: series === undefined ? skill.series : series,
-          manualCategory: category,
-          manualAuthor: author,
+          manualCategory: category === undefined ? skill.manualCategory : category,
+          manualAuthor: author === undefined ? skill.manualAuthor : author,
           manualSeries: series === undefined ? skill.manualSeries : series,
         };
       }),
@@ -1286,8 +1287,10 @@ test('a desktop tile click opens the editor and the map exposes no destructive a
   const mapButtons = [...container.querySelectorAll('.deck-map button')];
   for (const button of mapButtons) {
     assert.ok(
-      button.classList.contains('deck-map-tile') || button.classList.contains('deck-map-rename'),
-      'the Map only exposes tiles and series rename actions: ' + button.textContent,
+      button.classList.contains('deck-map-tile') ||
+        button.classList.contains('deck-map-rename') ||
+        button.classList.contains('deck-map-suggest'),
+      'the Map only exposes tiles, series rename and Suggest series actions: ' + button.textContent,
     );
   }
   assert.equal(
@@ -1560,6 +1563,245 @@ test('the Map view keeps loading and error states usable', async () => {
   } finally {
     globalThis.fetch = realFetch;
   }
+});
+
+const suggestionProfile = () => ({
+  ...JSON.parse(JSON.stringify(baseProfile)),
+  skills: [
+    {
+      ...baseProfile.skills[0],
+      name: 'ask-matt',
+      description: 'Ask Matt anything.',
+      author: 'Unknown',
+      manualAuthor: '',
+      series: '',
+      manualSeries: '',
+      authorSource: null,
+    },
+    {
+      ...baseProfile.skills[0],
+      name: 'huashu-art-motion',
+      description: 'Art and motion.',
+      author: '花叔',
+      manualAuthor: '',
+      series: '',
+      manualSeries: '',
+      authorSource: 'metadata.author',
+    },
+    {
+      ...baseProfile.skills[0],
+      name: 'pr',
+      description: 'Write a PR body.',
+      author: 'Dex Horthy',
+      manualAuthor: '',
+      series: '',
+      manualSeries: '',
+      authorSource: 'metadata.credits.author',
+    },
+    {
+      ...baseProfile.skills[0],
+      name: 'assigned-skill',
+      description: 'Already organized.',
+      author: 'Unknown',
+      manualAuthor: '',
+      series: 'Manual',
+      manualSeries: 'Manual',
+      authorSource: null,
+    },
+    {
+      ...baseProfile.skills[0],
+      name: 'writing-for-agents',
+      description: 'Write for agents.',
+      author: 'Unknown',
+      manualAuthor: '',
+      series: '',
+      manualSeries: '',
+      authorSource: null,
+    },
+  ],
+  totals: { skills: 5, modelInvocable: 5, userInvocable: 5, invalid: 0 },
+});
+
+function suggestionGroups(scope = container) {
+  return [...scope.querySelectorAll('.deck-suggest-group')].map((group) => ({
+    module: group.dataset.module,
+    name: group.querySelector('.deck-suggest-name')?.value,
+    skills: [...group.querySelectorAll('.deck-suggest-row')].map((row) => row.dataset.skill),
+  }));
+}
+
+test('the Map offers an inferred Suggest series review with editable modules and checkboxes', async () => {
+  profile = suggestionProfile();
+  await click(buttonByText('Refresh'));
+  assert.ok(container.querySelector('.deck-map'), 'the Map is the active view');
+
+  calls.length = 0;
+  const suggest = buttonByText('Suggest series');
+  assert.ok(suggest, 'the Map exposes a Suggest series action');
+  await click(suggest);
+
+  const dialog = container.querySelector('.deck-modal');
+  assert.ok(dialog, 'the suggestion review opens as a dialog');
+  assert.match(dialog.textContent, /Inferred/, 'the dialog labels the grouping as inferred');
+  assert.match(dialog.textContent, /inferred from frontmatter/i, 'the hint explains the inference');
+
+  assert.deepEqual(
+    suggestionGroups(dialog),
+    [
+      { module: 'huashu', name: 'huashu', skills: ['huashu-art-motion'] },
+      { module: 'humanlayer', name: 'Humanlayer', skills: ['pr'] },
+      { module: 'matt-pocock', name: 'Matt Pocock', skills: ['ask-matt', 'writing-for-agents'] },
+    ],
+    'metadata.author feeds huashu, credits feed Humanlayer, and the rest fall back to Matt Pocock',
+  );
+
+  const checkboxes = [...dialog.querySelectorAll('.deck-suggest-row input[type="checkbox"]')];
+  assert.equal(checkboxes.length, 4, 'one checkbox per proposed skill');
+  assert.ok(checkboxes.every((box) => box.checked), 'every candidate starts checked');
+  assert.ok(
+    !dialog.textContent.includes('assigned-skill'),
+    'a skill that already has a series is not proposed',
+  );
+  assert.ok(!suggestionGroups(dialog).some((group) => group.skills.includes('assigned-skill')));
+
+  await click(buttonInScope(dialog, 'Cancel'));
+  assert.equal(container.querySelector('.deck-modal'), null, 'cancel closes the review');
+
+  profile = JSON.parse(JSON.stringify(baseProfile));
+  await click(buttonByText('Refresh'));
+});
+
+test('the review applies edited series names only to checked, unassigned skills', async () => {
+  profile = suggestionProfile();
+  await click(buttonByText('Refresh'));
+  if (buttonByText('Map')?.getAttribute('aria-pressed') !== 'true') await click(buttonByText('Map'));
+  await click(buttonByText('Suggest series'));
+
+  const dialog = container.querySelector('.deck-modal');
+  const huashuInput = dialog.querySelector(
+    '.deck-suggest-group[data-module="huashu"] .deck-suggest-name',
+  );
+  const mattInput = dialog.querySelector(
+    '.deck-suggest-group[data-module="matt-pocock"] .deck-suggest-name',
+  );
+  await act(async () => {
+    setValue(huashuInput, 'Huashu Animation');
+    setValue(mattInput, 'Matt Pocock Skills');
+  });
+  await settle();
+
+  const prBox = dialog.querySelector('.deck-suggest-row[data-skill="pr"] input[type="checkbox"]');
+  await click(prBox);
+  assert.equal(prBox.checked, false, 'an individual skill can be unchecked');
+
+  calls.length = 0;
+  await click(buttonInScope(dialog, 'Apply suggestions'));
+
+  const annotates = calls.filter((call) => call.path === '/dsh-skill-deck/annotate');
+  assert.deepEqual(
+    annotates.map((call) => call.body),
+    [
+      { name: 'huashu-art-motion', series: 'Huashu Animation' },
+      { name: 'ask-matt', series: 'Matt Pocock Skills' },
+      { name: 'writing-for-agents', series: 'Matt Pocock Skills' },
+    ],
+    'only checked, unassigned skills are written, with each edited module name',
+  );
+  assert.ok(
+    !annotates.some((call) => call.body.name === 'assigned-skill'),
+    'an existing manual series is never overwritten',
+  );
+  assert.ok(
+    !annotates.some((call) => call.body.name === 'pr'),
+    'an unchecked skill is not written',
+  );
+
+  assert.equal(container.querySelector('.deck-modal'), null, 'the review closes after applying');
+  assert.match(container.textContent, /Suggested series applied/);
+  assert.deepEqual(
+    mapModules().map((module) => [module.title, module.tiles]),
+    [
+      ['Matt Pocock Skills', ['ask-matt', 'writing-for-agents']],
+      ['Huashu Animation', ['huashu-art-motion']],
+      ['Manual', ['assigned-skill']],
+      ['Unassigned', ['pr']],
+    ],
+    'the board shows the written series and leaves the unchecked and manual skills alone',
+  );
+
+  profile = JSON.parse(JSON.stringify(baseProfile));
+  await click(buttonByText('Refresh'));
+});
+
+test('applying suggestions offers an undo toast that restores the previous series', async () => {
+  profile = suggestionProfile();
+  await click(buttonByText('Refresh'));
+  if (buttonByText('Map')?.getAttribute('aria-pressed') !== 'true') await click(buttonByText('Map'));
+  await click(buttonByText('Suggest series'));
+  calls.length = 0;
+  await click(buttonInScope(container.querySelector('.deck-modal'), 'Apply suggestions'));
+
+  assert.equal(
+    calls.filter((call) => call.path === '/dsh-skill-deck/annotate').length,
+    4,
+    'every proposed skill was written',
+  );
+  const undo = buttonByText('Undo');
+  assert.ok(undo, 'the success toast offers an undo action');
+
+  calls.length = 0;
+  await click(undo);
+  const undoWrites = calls.filter((call) => call.path === '/dsh-skill-deck/annotate');
+  assert.deepEqual(
+    undoWrites.map((call) => call.body),
+    [
+      { name: 'huashu-art-motion', series: '' },
+      { name: 'pr', series: '' },
+      { name: 'ask-matt', series: '' },
+      { name: 'writing-for-agents', series: '' },
+    ],
+    'undo restores the series each skill had before the suggestion was applied',
+  );
+  assert.match(container.textContent, /Suggested series undone/);
+  assert.equal(buttonByText('Undo'), undefined, 'the undo action is consumed');
+  assert.deepEqual(
+    mapModules().map((module) => [module.title, module.tiles]),
+    [
+      ['Manual', ['assigned-skill']],
+      ['Unassigned', ['ask-matt', 'huashu-art-motion', 'pr', 'writing-for-agents']],
+    ],
+    'the board returns to the pre-suggestion grouping',
+  );
+
+  profile = JSON.parse(JSON.stringify(baseProfile));
+  await click(buttonByText('Refresh'));
+});
+
+test('the suggestion review explains when every skill already has a series', async () => {
+  const assigned = JSON.parse(JSON.stringify(baseProfile));
+  assigned.skills = assigned.skills.map((skill) => ({
+    ...skill,
+    series: 'Existing',
+    manualSeries: 'Existing',
+  }));
+  profile = assigned;
+  await click(buttonByText('Refresh'));
+  if (buttonByText('Map')?.getAttribute('aria-pressed') !== 'true') await click(buttonByText('Map'));
+  await click(buttonByText('Suggest series'));
+
+  const dialog = container.querySelector('.deck-modal');
+  assert.ok(dialog, 'the review still opens');
+  assert.match(dialog.textContent, /No skills to suggest a series for/);
+  assert.equal(dialog.querySelectorAll('.deck-suggest-row').length, 0, 'no skill is proposed');
+  assert.equal(
+    buttonInScope(dialog, 'Apply suggestions')?.disabled,
+    true,
+    'there is nothing to apply',
+  );
+
+  await click(buttonInScope(dialog, 'Cancel'));
+  profile = JSON.parse(JSON.stringify(baseProfile));
+  await click(buttonByText('Refresh'));
 });
 
 test('cleanup', async () => {
