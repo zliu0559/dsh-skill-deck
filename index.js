@@ -249,10 +249,18 @@ export function apply(ctx) {
       if (payload.author !== undefined && typeof payload.author !== 'string') {
         throw Object.assign(new Error('author must be a string'), { status: 400 });
       }
+      if (payload.series !== undefined && typeof payload.series !== 'string') {
+        throw Object.assign(new Error('series must be a string'), { status: 400 });
+      }
+      if (payload.previousSeries !== undefined && typeof payload.previousSeries !== 'string') {
+        throw Object.assign(new Error('previousSeries must be a string'), { status: 400 });
+      }
       const result = await annotateSkill({
         name: String(payload.name ?? ''),
         category: payload.category,
         author: payload.author,
+        series: payload.series,
+        previousSeries: payload.previousSeries,
       });
       sendJson(response, 200, { ok: true, ...result });
     });

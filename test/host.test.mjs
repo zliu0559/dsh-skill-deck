@@ -366,11 +366,17 @@ test('deleting a skill removes its annotation entry', async () => {
   const annotated = await call('/annotate', {
     method: 'POST',
     headers: jsonHeaders,
-    body: JSON.stringify({ name: 'doomed-skill', category: 'temporary', author: 'Manual Person' }),
+    body: JSON.stringify({
+      name: 'doomed-skill',
+      category: 'temporary',
+      author: 'Manual Person',
+      series: 'temporary-series',
+    }),
   });
   assert.equal(annotated.status, 200);
   const before = JSON.parse(readFileSync(annotationFile, 'utf8'));
   assert.equal(before.skills['doomed-skill'].category, 'temporary');
+  assert.equal(before.skills['doomed-skill'].series, 'temporary-series');
   assert.equal(before.skills.demo.category, 'Review', 'other annotations are present before the delete');
 
   const removed = await call('/delete', {
@@ -411,6 +417,121 @@ test('annotate rejects unknown skills and non-JSON bodies', async () => {
   assert.equal(wrongType.status, 415);
 });
 
+test('annotate stores a series and state returns the effective and manual value without a frontmatter fallback', async () => {
+  writeSkillWith('series-skill');
+  writeSkillWith('frontmatter-series', ['metadata:', '  series: From Frontmatter']);
+
+  const initial = JSON.parse((await call('/state')).body);
+  assert.equal(stateSkill(initial, 'series-skill').series, '', 'an unannotated skill has no effective series');
+  assert.equal(stateSkill(initial, 'series-skill').manualSeries, '', 'the manual series starts empty');
+  assert.equal(
+    stateSkill(initial, 'frontmatter-series').series,
+    '',
+    'series has no frontmatter fallback',
+  );
+
+  const skillFile = join(home, 'skills', 'series-skill', 'SKILL.md');
+  const before = readFileSync(skillFile);
+  const result = await call('/annotate', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({ name: 'series-skill', series: '  Matt Pocock  ' }),
+  });
+  assert.equal(result.status, 200);
+  const skill = JSON.parse(result.body).skill;
+  assert.equal(skill.series, 'Matt Pocock', 'the response carries the trimmed effective series');
+  assert.equal(skill.manualSeries, 'Matt Pocock', 'the response carries the manual series');
+  assert.deepEqual(readFileSync(skillFile), before, 'SKILL.md bytes are untouched');
+
+  const stored = JSON.parse(readFileSync(annotationFile, 'utf8'));
+  assert.equal(stored.version, 1, 'series stays on schema version 1');
+  assert.equal(stored.skills['series-skill'].series, 'Matt Pocock');
+  assert.match(stored.skills['series-skill'].updatedAt, /^\d{4}-\d{2}-\d{2}T/);
+
+  const state = JSON.parse((await call('/state')).body);
+  assert.equal(stateSkill(state, 'series-skill').series, 'Matt Pocock');
+  assert.equal(stateSkill(state, 'series-skill').manualSeries, 'Matt Pocock');
+  assert.equal(
+    stateSkill(state, 'frontmatter-series').series,
+    '',
+    'frontmatter metadata never supplies a series',
+  );
+});
+
+test('clearing a series removes the annotation when it was the only field', async () => {
+  const cleared = await call('/annotate', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({ name: 'series-skill', series: '' }),
+  });
+  assert.equal(cleared.status, 200);
+  const skill = JSON.parse(cleared.body).skill;
+  assert.equal(skill.series, '');
+  assert.equal(skill.manualSeries, '');
+
+  const stored = JSON.parse(readFileSync(annotationFile, 'utf8'));
+  assert.equal(stored.skills['series-skill'], undefined, 'an all-empty entry is deleted');
+});
+
+test('renaming a series updates every member in one request and leaves other series alone', async () => {
+  writeSkillWith('series-a');
+  writeSkillWith('series-b');
+  writeSkillWith('series-c');
+  writeSkillWith('series-other');
+  for (const [name, series] of [
+    ['series-a', 'Matt Pocock'],
+    ['series-b', 'matt pocock'],
+    ['series-c', '  Matt Pocock  '],
+    ['series-other', 'Humanlayer'],
+  ]) {
+    const extra = name === 'series-b' ? { category: 'keep-me', author: 'Keep Author' } : {};
+    const saved = await call('/annotate', {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ name, series, ...extra }),
+    });
+    assert.equal(saved.status, 200);
+  }
+
+  const renamed = await call('/annotate', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({ name: 'series-a', previousSeries: 'MATT POCOCK', series: 'Matt' }),
+  });
+  assert.equal(renamed.status, 200);
+  assert.equal(JSON.parse(renamed.body).skill.series, 'Matt');
+
+  const state = JSON.parse((await call('/state')).body);
+  for (const name of ['series-a', 'series-b', 'series-c']) {
+    assert.equal(stateSkill(state, name).series, 'Matt', name + ' joined the rename');
+    assert.equal(stateSkill(state, name).manualSeries, 'Matt');
+  }
+  assert.equal(stateSkill(state, 'series-b').manualCategory, 'keep-me', 'other fields survive a rename');
+  assert.equal(stateSkill(state, 'series-b').manualAuthor, 'Keep Author');
+  assert.equal(stateSkill(state, 'series-other').series, 'Humanlayer', 'another series is untouched');
+
+  const stored = JSON.parse(readFileSync(annotationFile, 'utf8'));
+  assert.equal(stored.skills['series-b'].series, 'Matt');
+  assert.equal(stored.skills['series-c'].series, 'Matt');
+  assert.equal(stored.skills['series-other'].series, 'Humanlayer');
+
+  const unknown = await call('/annotate', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({ name: 'no-such-skill', previousSeries: 'Matt', series: 'Other' }),
+  });
+  assert.equal(unknown.status, 404, 'a rename still requires an existing addressed skill');
+});
+
+test('the annotate route rejects a non-string series', async () => {
+  const result = await call('/annotate', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({ name: 'demo', series: 42 }),
+  });
+  assert.equal(result.status, 400);
+});
+
 test('a malformed annotation file degrades to an empty set and a write recovers it', async () => {
   mkdirSync(annotationDir, { recursive: true });
   const malformed = '{ this is not json';
@@ -422,6 +543,8 @@ test('a malformed annotation file degrades to an empty set and a write recovers 
   assert.ok(demo, 'skills still list despite the corrupt file');
   assert.equal(demo.category, 'Uncategorized');
   assert.equal(demo.author, 'Unknown');
+  assert.equal(demo.series, '');
+  assert.equal(demo.manualSeries, '');
 
   const saved = await call('/annotate', {
     method: 'POST',
