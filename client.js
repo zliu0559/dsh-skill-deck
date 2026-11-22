@@ -14,6 +14,8 @@ window.__ModuleLoader__.load({
 
     const NS = 'dsh-skill-deck';
     const API = '/dsh-skill-deck';
+    const UNCATEGORIZED = 'Uncategorized';
+    const UNKNOWN_AUTHOR = 'Unknown';
 
     const zh = {
       title: '技能',
@@ -86,6 +88,20 @@ window.__ModuleLoader__.load({
       duplicated: '副本已创建',
       clientLoaded: '浏览器端已加载',
       clientMissing: '浏览器端未加载',
+      tag: '标签',
+      categoryLabel: '分类',
+      authorLabel: '作者',
+      uncategorized: '未分类',
+      unknownAuthor: '未知作者',
+      annotationTitle: '分类与作者',
+      annotationCategory: '分类',
+      annotationCategoryHint: '可以从已有分类里选，也可以输入新的；留空表示未分类。',
+      annotationAuthor: '作者',
+      annotationAuthorHint: '留空会使用 SKILL.md 里的作者，没有则显示未知作者。',
+      annotationHint: '标注保存在插件自己的文件里，不会改动 SKILL.md。',
+      annotationAction: '保存标注',
+      annotationSaving: '保存中…',
+      annotated: '标注已保存',
     };
 
     const en = {
@@ -159,6 +175,20 @@ window.__ModuleLoader__.load({
       duplicated: 'Copy created',
       clientLoaded: 'Browser half loaded',
       clientMissing: 'Browser half not loaded',
+      tag: 'Tag',
+      categoryLabel: 'Category',
+      authorLabel: 'Author',
+      uncategorized: 'Uncategorized',
+      unknownAuthor: 'Unknown',
+      annotationTitle: 'Category and author',
+      annotationCategory: 'Category',
+      annotationCategoryHint: 'Pick an existing category or type a new one; leave it empty for Uncategorized.',
+      annotationAuthor: 'Author',
+      annotationAuthorHint: 'Leave it empty to use the SKILL.md author, or Unknown when there is none.',
+      annotationHint: 'Annotations live in a plugin-owned file; SKILL.md is never changed.',
+      annotationAction: 'Save tags',
+      annotationSaving: 'Saving…',
+      annotated: 'Tags saved',
     };
 
     const language = (navigator.language || 'en').toLowerCase();
@@ -188,6 +218,7 @@ window.__ModuleLoader__.load({
       .deck-badge { display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: 999px; font-size: 10px; font-weight: 600; letter-spacing: .2px; background: rgba(59,130,246,.14); color: var(--dsw-alias-state-business-primary, #3b82f6); }
       .deck-badge.muted { background: rgba(127,127,127,.16); color: var(--dsw-alias-label-tertiary, inherit); }
       .deck-badge.warn { background: rgba(220,38,38,.14); color: var(--dsw-alias-state-error-primary, #dc2626); }
+      .deck-tag { display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: 999px; background: rgba(127,127,127,.13); font-size: 10px; }
       .deck-switches { display: flex; gap: 6px; }
       .deck-switch { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px; border-radius: 999px; border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.3)); background: transparent; color: var(--dsw-alias-label-tertiary, inherit); font-size: 11px; cursor: pointer; }
       .deck-switch .dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(127,127,127,.5); }
@@ -275,6 +306,14 @@ window.__ModuleLoader__.load({
       return (bytes / 1024 / 1024).toFixed(1) + ' MB';
     }
 
+    function displayCategory(value) {
+      return !value || value === UNCATEGORIZED ? t('uncategorized') : value;
+    }
+
+    function displayAuthor(value) {
+      return !value || value === UNKNOWN_AUTHOR ? t('unknownAuthor') : value;
+    }
+
     function Badge(props) {
       return h('span', { className: 'deck-badge' + (props.muted ? ' muted' : '') + (props.warn ? ' warn' : '') }, props.children);
     }
@@ -327,7 +366,7 @@ window.__ModuleLoader__.load({
     }
 
     function SkillRow(props) {
-      const { skill, busy, onToggle, onEdit, onReveal, onDuplicate, onRemove } = props;
+      const { skill, busy, onToggle, onEdit, onReveal, onDuplicate, onRemove, onAnnotate } = props;
       return h(
         'li',
         { className: 'deck-row' },
@@ -347,6 +386,8 @@ window.__ModuleLoader__.load({
             'div',
             { className: 'deck-meta' },
             h('span', null, skill.root),
+            h('span', { className: 'deck-tag' }, t('categoryLabel') + ' · ' + displayCategory(skill.category)),
+            h('span', { className: 'deck-tag' }, t('authorLabel') + ' · ' + displayAuthor(skill.author)),
             h('span', null, skill.files + ' ' + t('files') + ' · ' + formatBytes(skill.bytes)),
             skill.updatedAt ? h('span', null, skill.updatedAt.slice(0, 10)) : null,
           ),
@@ -381,6 +422,7 @@ window.__ModuleLoader__.load({
             },
             t('edit'),
           ),
+          h('button', { className: 'deck-btn', onClick: () => onAnnotate && onAnnotate(skill) }, t('tag')),
           h('button', { className: 'deck-btn', onClick: () => onReveal(skill) }, t('reveal')),
           h('button', { className: 'deck-btn', onClick: () => onDuplicate(skill) }, t('duplicate')),
           h('button', { className: 'deck-btn danger', onClick: () => onRemove(skill) }, t('remove')),
@@ -528,6 +570,68 @@ window.__ModuleLoader__.load({
       );
     }
 
+    function AnnotationDialog(props) {
+      const { skill, form, suggestions, busy, error, onChange, onSubmit, onClose } = props;
+      const listId = NS + '-category-suggestions';
+      return h(
+        Modal,
+        { title: t('annotationTitle') + ' · ' + skill.name, onClose },
+        h(
+          'div',
+          { className: 'deck-modal-body' },
+          h(
+            'label',
+            { className: 'deck-field' },
+            h('span', { className: 'deck-field-label' }, t('annotationCategory')),
+            h('input', {
+              className: 'deck-input',
+              value: form.category,
+              list: listId,
+              spellCheck: false,
+              'aria-label': t('annotationCategory'),
+              onChange: (event) => onChange('category', event.target.value),
+            }),
+            h(
+              'datalist',
+              { id: listId },
+              suggestions.map((value) => h('option', { key: value, value })),
+            ),
+            h('span', { className: 'deck-note' }, t('annotationCategoryHint')),
+          ),
+          h(
+            'label',
+            { className: 'deck-field' },
+            h('span', { className: 'deck-field-label' }, t('annotationAuthor')),
+            h('input', {
+              className: 'deck-input',
+              value: form.author,
+              spellCheck: false,
+              'aria-label': t('annotationAuthor'),
+              onChange: (event) => onChange('author', event.target.value),
+            }),
+            h('span', { className: 'deck-note' }, t('annotationAuthorHint')),
+          ),
+          h('p', { className: 'deck-note' }, t('annotationHint')),
+          error ? h('p', { className: 'deck-error' }, error) : null,
+        ),
+        h(
+          'div',
+          { className: 'deck-modal-foot' },
+          h('span', { className: 'deck-note' }, skill.path),
+          h(
+            'div',
+            { style: { display: 'flex', gap: 8 } },
+            h('button', { className: 'deck-btn', onClick: onClose }, t('cancel')),
+            h(
+              'button',
+              { className: 'deck-btn primary', disabled: busy, onClick: onSubmit },
+              busy ? t('annotationSaving') : t('annotationAction'),
+            ),
+          ),
+        ),
+      );
+    }
+
     function Panel() {
       const [state, setState] = useState({ status: 'loading', error: null, skills: [], roots: [], totals: null, version: '', platform: '', client: null });
       const [query, setQuery] = useState('');
@@ -548,6 +652,10 @@ window.__ModuleLoader__.load({
       const [dupName, setDupName] = useState('');
       const [dupError, setDupError] = useState('');
       const [dupBusy, setDupBusy] = useState(false);
+      const [annotating, setAnnotating] = useState(null);
+      const [annotationForm, setAnnotationForm] = useState({ category: '', author: '' });
+      const [annotationError, setAnnotationError] = useState('');
+      const [annotationBusy, setAnnotationBusy] = useState(false);
       const [copied, setCopied] = useState(false);
       const toastTimer = useRef(null);
 
@@ -623,6 +731,34 @@ window.__ModuleLoader__.load({
           setDupBusy(false);
         }
       }, [dupName, duplicating, load, notify]);
+
+      const openAnnotation = useCallback((skill) => {
+        setAnnotating(skill);
+        setAnnotationForm({
+          category: skill.category && skill.category !== UNCATEGORIZED ? skill.category : '',
+          author: skill.author && skill.author !== UNKNOWN_AUTHOR ? skill.author : '',
+        });
+        setAnnotationError('');
+      }, []);
+
+      const submitAnnotation = useCallback(async () => {
+        if (!annotating) return;
+        setAnnotationBusy(true);
+        try {
+          const payload = await api('/annotate', {
+            name: annotating.name,
+            category: annotationForm.category,
+            author: annotationForm.author,
+          });
+          replaceSkill(payload.skill);
+          setAnnotating(null);
+          notify(t('annotated'));
+        } catch (error) {
+          setAnnotationError(error.message);
+        } finally {
+          setAnnotationBusy(false);
+        }
+      }, [annotating, annotationForm, notify, replaceSkill]);
 
       const toggle = useCallback(
         async (skill, surface, enabled) => {
@@ -798,6 +934,17 @@ window.__ModuleLoader__.load({
         };
       }, [state.skills]);
 
+      const categorySuggestions = useMemo(() => {
+        const seen = new Map();
+        for (const skill of state.skills) {
+          const value = (skill.category || '').trim();
+          if (!value || value === UNCATEGORIZED) continue;
+          const key = value.toLowerCase();
+          if (!seen.has(key)) seen.set(key, value);
+        }
+        return [...seen.values()].sort((a, b) => a.localeCompare(b));
+      }, [state.skills]);
+
       const visible = useMemo(() => {
         const needle = query.trim().toLowerCase();
         return state.skills.filter((skill) => {
@@ -821,6 +968,7 @@ window.__ModuleLoader__.load({
           onEdit: openEditor,
           onReveal: reveal,
           onDuplicate: openDuplicate,
+          onAnnotate: openAnnotation,
           onRemove: (target) => {
             setConfirming(target);
             setConfirmText('');
@@ -983,6 +1131,21 @@ window.__ModuleLoader__.load({
               ),
             )
           : null,
+        annotating
+          ? h(AnnotationDialog, {
+              skill: annotating,
+              form: annotationForm,
+              suggestions: categorySuggestions,
+              busy: annotationBusy,
+              error: annotationError,
+              onChange: (field, value) => {
+                setAnnotationForm((prev) => ({ ...prev, [field]: value }));
+                if (annotationError) setAnnotationError('');
+              },
+              onSubmit: submitAnnotation,
+              onClose: () => setAnnotating(null),
+            })
+          : null,
         duplicating
           ? h(DuplicateDialog, {
               source: duplicating,
@@ -1038,7 +1201,12 @@ window.__ModuleLoader__.load({
       );
     }
 
-    return { name: NS, inject: ['slots'], apply, components: { Panel, SkillRow, CreateDialog, DuplicateDialog, DiagFooter } };
+    return {
+      name: NS,
+      inject: ['slots'],
+      apply,
+      components: { Panel, SkillRow, CreateDialog, DuplicateDialog, AnnotationDialog, DiagFooter },
+    };
   },
 });
 

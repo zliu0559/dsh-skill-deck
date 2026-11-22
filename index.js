@@ -6,6 +6,7 @@
  * surfaces, save an edited document, move a skill to the trash, and open its
  * directory in the OS file manager.
  */
+import { annotateSkill, applyAnnotations } from './lib/annotations.js';
 import {
   createSkill,
   duplicateSkill,
@@ -160,16 +161,17 @@ export function apply(ctx) {
 
     route('/state', async (request, response) => {
       const { roots, skills } = await listSkills();
+      const annotated = applyAnnotations(skills);
       const totals = {
-        skills: skills.length,
-        modelInvocable: skills.filter((skill) => skill.modelInvocable).length,
-        userInvocable: skills.filter((skill) => skill.userInvocable).length,
-        invalid: skills.filter((skill) => !skill.valid).length,
+        skills: annotated.length,
+        modelInvocable: annotated.filter((skill) => skill.modelInvocable).length,
+        userInvocable: annotated.filter((skill) => skill.userInvocable).length,
+        invalid: annotated.filter((skill) => !skill.valid).length,
       };
       sendJson(response, 200, {
         ok: true,
         roots,
-        skills,
+        skills: annotated,
         totals,
         version: pluginVersion(),
         platform: process.platform,
@@ -224,6 +226,22 @@ export function apply(ctx) {
         name: String(payload.name ?? ''),
         description: String(payload.description ?? ''),
         scope: typeof payload.scope === 'string' ? payload.scope : undefined,
+      });
+      sendJson(response, 200, { ok: true, ...result });
+    });
+
+    route('/annotate', async (request, response) => {
+      const payload = await readJson(request);
+      if (payload.category !== undefined && typeof payload.category !== 'string') {
+        throw Object.assign(new Error('category must be a string'), { status: 400 });
+      }
+      if (payload.author !== undefined && typeof payload.author !== 'string') {
+        throw Object.assign(new Error('author must be a string'), { status: 400 });
+      }
+      const result = await annotateSkill({
+        name: String(payload.name ?? ''),
+        category: payload.category,
+        author: payload.author,
       });
       sendJson(response, 200, { ok: true, ...result });
     });
