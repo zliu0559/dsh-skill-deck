@@ -16,7 +16,7 @@ window.__ModuleLoader__.load({
     const API = '/dsh-skill-deck';
     const UNCATEGORIZED = 'Uncategorized';
     const UNKNOWN_AUTHOR = 'Unknown';
-    const VIEWS = ['list', 'cards'];
+    const VIEWS = ['list', 'cards', 'map'];
     const GROUPINGS = ['category', 'author', 'root'];
     const VIEW_KEY = NS + '/view';
     const GROUP_KEY = NS + '/groupBy';
@@ -109,6 +109,9 @@ window.__ModuleLoader__.load({
       viewLabel: '视图',
       viewList: '列表',
       viewCards: '卡片',
+      viewMap: '地图',
+      mapLabel: '技能地图',
+      mapLegend: '分组图例',
       groupBy: '分组',
       groupByCategory: '分类',
       groupByAuthor: '作者',
@@ -204,6 +207,9 @@ window.__ModuleLoader__.load({
       viewLabel: 'View',
       viewList: 'List',
       viewCards: 'Cards',
+      viewMap: 'Map',
+      mapLabel: 'Skill map',
+      mapLegend: 'Group legend',
       groupBy: 'Group by',
       groupByCategory: 'Category',
       groupByAuthor: 'Author',
@@ -247,6 +253,20 @@ window.__ModuleLoader__.load({
       .deck-card-controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-top: auto; }
       .deck-card-actions { display: flex; gap: 6px; flex-wrap: wrap; }
       .deck-card-actions .deck-btn { height: 24px; padding: 0 8px; font-size: 11px; }
+      .deck-map { display: flex; flex-direction: column; gap: 12px; }
+      .deck-map-canvas { position: relative; width: 100%; height: min(62vh, 520px); min-height: 320px; border-radius: var(--dsw-radius-lg, 10px); border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.22)); background: rgba(127,127,127,.06); overflow: hidden; }
+      .deck-map-block { position: absolute; display: flex; align-items: flex-end; box-sizing: border-box; margin: 0; padding: 5px 7px; border: 1px solid rgba(255,255,255,.28); border-radius: 3px; overflow: hidden; color: #fff; font: inherit; text-align: left; cursor: pointer; }
+      .deck-map-block:hover { z-index: 3; overflow: visible; border-color: rgba(255,255,255,.72); filter: brightness(1.08); }
+      .deck-map-block:focus, .deck-map-block:focus-visible { z-index: 3; overflow: visible; outline: 2px solid var(--dsw-focus-ring-color, #3b82f6); outline-offset: -3px; }
+      .deck-map-details { position: absolute; left: 4px; bottom: 4px; display: flex; align-items: baseline; gap: 6px; max-width: min(240px, 86vw); padding: 2px 6px; border-radius: 4px; background: rgba(17,24,39,.88); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; transform: translateY(3px); transition: opacity .12s ease, transform .12s ease; pointer-events: none; }
+      .deck-map-block:hover .deck-map-details, .deck-map-block:focus .deck-map-details, .deck-map-block:focus-visible .deck-map-details { opacity: 1; transform: none; }
+      .deck-map-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; font-weight: 600; }
+      .deck-map-size { flex: none; font-size: 10px; opacity: .86; }
+      .deck-map-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; font-size: 11px; color: var(--dsw-alias-label-secondary, inherit); }
+      .deck-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+      .deck-legend-swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+      .deck-legend-label { font-weight: 600; }
+      .deck-legend-count { min-width: 18px; padding: 0 5px; border-radius: 999px; background: rgba(127,127,127,.16); text-align: center; font-size: 10px; font-weight: 600; }
       .deck-row { display: grid; grid-template-columns: minmax(0,1fr) auto auto; gap: 12px; align-items: center; padding: 12px 14px; border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.22)); border-radius: var(--dsw-radius-lg, 10px); }
       .deck-name { display: flex; align-items: center; gap: 8px; font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
       .deck-desc { margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--dsw-alias-label-secondary, inherit); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -415,6 +435,165 @@ window.__ModuleLoader__.load({
     function groupLabel(group, dimension) {
       if (!group.fallback) return group.label;
       return dimension === 'author' || dimension === 'root' ? t('unknownAuthor') : t('uncategorized');
+    }
+
+    // Group colors for the map; the legend uses the same order and palette.
+    const MAP_COLORS = [
+      '#2563eb',
+      '#16a34a',
+      '#d97706',
+      '#9333ea',
+      '#dc2626',
+      '#0891b2',
+      '#ca8a04',
+      '#db2777',
+      '#4f46e5',
+      '#059669',
+      '#ea580c',
+      '#7c3aed',
+    ];
+
+    function mapColor(index) {
+      return MAP_COLORS[index % MAP_COLORS.length];
+    }
+
+    /**
+     * Treemap area weight. Bundle bytes carry the area; a zero-byte skill
+     * falls back to its file count; a skill with neither contributes one
+     * unit, so an all-empty deck divides the map evenly.
+     */
+    function skillWeight(skill) {
+      const bytes = Number(skill.bytes);
+      if (Number.isFinite(bytes) && bytes > 0) return bytes;
+      const files = Number(skill.files);
+      if (Number.isFinite(files) && files > 0) return files;
+      return 1;
+    }
+
+    function worstAspect(row, side) {
+      let sum = 0;
+      let max = 0;
+      let min = Infinity;
+      for (const entry of row) {
+        sum += entry.area;
+        if (entry.area > max) max = entry.area;
+        if (entry.area < min) min = entry.area;
+      }
+      if (sum <= 0 || side <= 0 || min === Infinity) return Infinity;
+      return Math.max((side * side * max) / (sum * sum), (sum * sum) / (side * side * min));
+    }
+
+    /**
+     * Hand-written squarified treemap over a 100x100 canvas. Each returned
+     * entry keeps its skill and receives percentage x/y/width/height.
+     */
+    function squarifySkills(entries) {
+      const total = entries.reduce((sum, entry) => sum + entry.weight, 0);
+      const remaining = entries
+        .map((entry) => ({ ...entry, area: (entry.weight / total) * 10000 }))
+        .sort((a, b) => b.area - a.area);
+      const placed = [];
+      let rest = remaining;
+      let rect = { x: 0, y: 0, w: 100, h: 100 };
+      while (rest.length > 0) {
+        const side = Math.min(rect.w, rect.h);
+        if (!(side > 0)) {
+          // Float residue after the last row; stack the rest into the canvas.
+          for (const entry of rest) placed.push({ ...entry, x: 0, y: 0, w: 100, h: 100 });
+          break;
+        }
+        const row = [rest[0]];
+        let score = worstAspect(row, side);
+        while (rest.length > row.length) {
+          const candidate = row.concat(rest[row.length]);
+          const nextScore = worstAspect(candidate, side);
+          if (nextScore > score) break;
+          row.push(rest[row.length]);
+          score = nextScore;
+        }
+        const rowArea = row.reduce((sum, entry) => sum + entry.area, 0);
+        const thickness = rowArea / side;
+        let offset = 0;
+        if (rect.w >= rect.h) {
+          for (const entry of row) {
+            const height = (entry.area / rowArea) * rect.h;
+            placed.push({ ...entry, x: rect.x, y: rect.y + offset, w: thickness, h: height });
+            offset += height;
+          }
+          rect = { x: rect.x + thickness, y: rect.y, w: rect.w - thickness, h: rect.h };
+        } else {
+          for (const entry of row) {
+            const width = (entry.area / rowArea) * rect.w;
+            placed.push({ ...entry, x: rect.x + offset, y: rect.y, w: width, h: thickness });
+            offset += width;
+          }
+          rect = { x: rect.x, y: rect.y + thickness, w: rect.w, h: rect.h - thickness };
+        }
+        rest = rest.slice(row.length);
+      }
+      return placed;
+    }
+
+    function SkillMap(props) {
+      const { groups, groupBy, busy, onEdit } = props;
+      const entries = [];
+      groups.forEach((group, index) => {
+        const color = mapColor(index);
+        for (const skill of group.skills) entries.push({ skill, color, weight: skillWeight(skill) });
+      });
+      const layout = squarifySkills(entries);
+      return h(
+        'div',
+        { className: 'deck-map' },
+        h(
+          'div',
+          { className: 'deck-map-canvas', role: 'group', 'aria-label': t('mapLabel') },
+          layout.map((entry) => {
+            const skill = entry.skill;
+            const size = formatBytes(skill.bytes);
+            const label = skill.name + ' · ' + size;
+            return h(
+              'button',
+              {
+                key: skill.name,
+                type: 'button',
+                className: 'deck-map-block',
+                'data-skill': skill.name,
+                'aria-label': label,
+                title: label,
+                disabled: busy === skill.name + ':read',
+                style: {
+                  left: entry.x + '%',
+                  top: entry.y + '%',
+                  width: entry.w + '%',
+                  height: entry.h + '%',
+                  backgroundColor: entry.color,
+                },
+                onClick: () => onEdit(skill),
+              },
+              h(
+                'span',
+                { className: 'deck-map-details' },
+                h('span', { className: 'deck-map-name' }, skill.name),
+                h('span', { className: 'deck-map-size' }, size),
+              ),
+            );
+          }),
+        ),
+        h(
+          'div',
+          { className: 'deck-map-legend', role: 'list', 'aria-label': t('mapLegend') },
+          groups.map((group, index) =>
+            h(
+              'div',
+              { key: group.key, className: 'deck-legend-item', role: 'listitem', 'data-group': group.key },
+              h('span', { className: 'deck-legend-swatch', style: { backgroundColor: mapColor(index) } }),
+              h('span', { className: 'deck-legend-label' }, groupLabel(group, groupBy)),
+              h('span', { className: 'deck-legend-count' }, String(group.count)),
+            ),
+          ),
+        ),
+      );
     }
 
     function Badge(props) {
@@ -1222,9 +1401,11 @@ window.__ModuleLoader__.load({
               )
             : visible.length === 0
               ? h('div', { className: 'deck-empty' }, state.skills.length === 0 ? t('empty') : t('noMatch'))
-              : view === 'cards'
-                ? h('div', { className: 'deck-cards' }, cards)
-                : h('ul', { className: 'deck-list' }, rows);
+              : view === 'map'
+                ? h(SkillMap, { groups, groupBy, busy, onEdit: openEditor })
+                : view === 'cards'
+                  ? h('div', { className: 'deck-cards' }, cards)
+                  : h('ul', { className: 'deck-list' }, rows);
 
       return h(
         'div',
@@ -1291,6 +1472,16 @@ window.__ModuleLoader__.load({
                   onClick: () => chooseView('cards'),
                 },
                 t('viewCards'),
+              ),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'deck-btn',
+                  'aria-pressed': view === 'map' ? 'true' : 'false',
+                  onClick: () => chooseView('map'),
+                },
+                t('viewMap'),
               ),
             ),
             h(
