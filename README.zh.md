@@ -102,7 +102,7 @@ Host API 是同源 JSON，通过 `webServer.register` 挂载；每个写操作�
 `main` 放已发布代码，`develop` 集成进行中的工作。版本遵循 SemVer，每次发布都是一个 `vX.Y.Z` 标签，并自动生成 GitHub Release。安装固定版本：
 
 ```text
-https://github.com/zliu0559/dsh-skill-deck/archive/refs/tags/v0.3.0.tar.gz
+https://github.com/zliu0559/dsh-skill-deck/archive/refs/tags/v0.4.0.tar.gz
 ```
 
 完整流程见 [docs/RELEASING.md](docs/RELEASING.md)。

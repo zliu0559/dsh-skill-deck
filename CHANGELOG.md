@@ -7,6 +7,10 @@ branch and release flow.
 
 ## Unreleased
 
+- Nothing yet.
+
+## 0.4.0 — 2026-11-22
+
 - **Skills page in the sidebar**: a localized **Skills** entry after the shipped
   pages opens the deck in the center column; Settings → Skills keeps working.
 - **Three views over one deck**: List, a grouped Cards wall, and a Map that is a

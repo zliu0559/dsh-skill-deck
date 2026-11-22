@@ -122,7 +122,7 @@ follow SemVer, and each release is a `vX.Y.Z` tag that also creates a GitHub
 Release. To install a pinned version:
 
 ```text
-https://github.com/zliu0559/dsh-skill-deck/archive/refs/tags/v0.3.0.tar.gz
+https://github.com/zliu0559/dsh-skill-deck/archive/refs/tags/v0.4.0.tar.gz
 ```
 
 The full flow is in [docs/RELEASING.md](docs/RELEASING.md).
