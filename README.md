@@ -77,6 +77,12 @@ npm test
 
 The Host API is same-origin JSON, mounted through `webServer.register`, and every mutating request re-discovers the skill by name before touching a path, so a request cannot address a file outside the managed roots.
 
+## Security
+
+The routes are local-only, same-origin, and refuse non-JSON writes; a request
+names a skill, never a path. See [SECURITY.md](SECURITY.md) for the design and
+how to report an issue.
+
 ## Roadmap
 
 - Project-level roots (`<repo>/.dsh/skills`) with a workspace picker.

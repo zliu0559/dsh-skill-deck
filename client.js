@@ -471,6 +471,16 @@ window.__ModuleLoader__.load({
         [notify],
       );
 
+      const counts = useMemo(() => {
+        const enabled = state.skills.filter((skill) => skill.modelInvocable || skill.userInvocable).length;
+        return {
+          all: state.skills.length,
+          enabled,
+          disabled: state.skills.length - enabled,
+          invalid: state.skills.filter((skill) => !skill.valid).length,
+        };
+      }, [state.skills]);
+
       const visible = useMemo(() => {
         const needle = query.trim().toLowerCase();
         return state.skills.filter((skill) => {
@@ -528,7 +538,14 @@ window.__ModuleLoader__.load({
             'div',
             null,
             h('h3', { className: 'deck-title' }, t('title'), state.totals ? h('span', { className: 'deck-badge muted', style: { marginLeft: 8 } }, state.totals.skills) : null),
-            h('p', { className: 'deck-sub' }, t('subtitle')),
+            h(
+              'p',
+              { className: 'deck-sub' },
+              t('subtitle'),
+              state.status === 'ready' && (query.trim() !== '' || filter !== 'all')
+                ? ' · ' + visible.length + ' / ' + state.skills.length
+                : null,
+            ),
           ),
           h(
             'div',
@@ -538,15 +555,16 @@ window.__ModuleLoader__.load({
               type: 'search',
               value: query,
               placeholder: t('search'),
+              'aria-label': t('search'),
               onChange: (event) => setQuery(event.target.value),
             }),
             h(
               'select',
               { className: 'deck-select', value: filter, onChange: (event) => setFilter(event.target.value) },
-              h('option', { value: 'all' }, t('filterAll')),
-              h('option', { value: 'enabled' }, t('filterEnabled')),
-              h('option', { value: 'disabled' }, t('filterDisabled')),
-              h('option', { value: 'invalid' }, t('filterInvalid')),
+              h('option', { value: 'all' }, t('filterAll') + ' (' + counts.all + ')'),
+              h('option', { value: 'enabled' }, t('filterEnabled') + ' (' + counts.enabled + ')'),
+              h('option', { value: 'disabled' }, t('filterDisabled') + ' (' + counts.disabled + ')'),
+              h('option', { value: 'invalid' }, t('filterInvalid') + ' (' + counts.invalid + ')'),
             ),
             h(
               'button',
@@ -666,3 +684,4 @@ window.__ModuleLoader__.load({
     return { name: NS, inject: ['slots'], apply, components: { Panel, SkillRow } };
   },
 });
+

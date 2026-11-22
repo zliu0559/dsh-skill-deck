@@ -77,6 +77,10 @@ npm test
 
 Host API 是同源 JSON，通过 `webServer.register` 挂载；每个写操作都会先按名称重新发现技能再定位路径，所以请求无法指向受管目录之外的文件。
 
+## 安全
+
+接口只对本机、同源开放，写请求必须是 JSON；请求只携带技能名，从不携带路径。设计说明与上报方式见 [SECURITY.md](SECURITY.md)。
+
 ## 路线图
 
 - 项目级目录（`<repo>/.dsh/skills`）+ 工作区切换。
