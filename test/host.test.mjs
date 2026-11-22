@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { annotationFilePath } from '../lib/annotations.js';
 
 const home = mkdtempSync(join(tmpdir(), 'skill-deck-host-'));
 process.env.DSH_HOME = home;
@@ -243,7 +244,12 @@ test('a same-origin browser call is allowed', async () => {
   assert.equal(result.status, 200);
 });
 
-const annotationFile = join(home, 'skill-deck', 'annotations.json');
+const annotationFile = annotationFilePath();
+const annotationDir = join(home, 'skill-deck');
+
+function annotationBackups() {
+  return readdirSync(annotationDir).filter((name) => /^annotations\.corrupt-.*\.json$/.test(name));
+}
 
 function writeSkillWith(name, extraLines = []) {
   const dir = join(home, 'skills', name);
@@ -273,7 +279,10 @@ test('state falls back through metadata.author and metadata.credits.author', asy
   const plain = stateSkill(payload, 'plain-annotated');
   assert.equal(plain.category, 'Uncategorized');
   assert.equal(plain.author, 'Unknown');
+  assert.equal(plain.manualCategory, '', 'no manual category is exposed as empty');
+  assert.equal(plain.manualAuthor, '', 'no manual author is exposed as empty');
   assert.equal(stateSkill(payload, 'authored').author, 'Front Author');
+  assert.equal(stateSkill(payload, 'authored').manualAuthor, '', 'frontmatter authors stay out of manual values');
   assert.equal(stateSkill(payload, 'credited').author, 'Credit Author');
   assert.equal(stateSkill(payload, 'both-authored').author, 'Front Author');
 });
@@ -294,6 +303,8 @@ test('annotate persists to a versioned plugin file and never rewrites SKILL.md',
   assert.equal(payload.skill.name, 'demo');
   assert.equal(payload.skill.category, 'Review');
   assert.equal(payload.skill.author, 'Dex Horthy');
+  assert.equal(payload.skill.manualCategory, 'Review', 'the route returns the manual category');
+  assert.equal(payload.skill.manualAuthor, 'Dex Horthy', 'the route returns the manual author');
   assert.deepEqual(readFileSync(skillFile), before, 'SKILL.md bytes are untouched');
 
   const stored = JSON.parse(readFileSync(annotationFile, 'utf8'));
@@ -305,6 +316,8 @@ test('annotate persists to a versioned plugin file and never rewrites SKILL.md',
   const state = JSON.parse((await call('/state')).body);
   assert.equal(stateSkill(state, 'demo').category, 'Review');
   assert.equal(stateSkill(state, 'demo').author, 'Dex Horthy');
+  assert.equal(stateSkill(state, 'demo').manualCategory, 'Review');
+  assert.equal(stateSkill(state, 'demo').manualAuthor, 'Dex Horthy');
 });
 
 test('clearing a field restores the frontmatter fallback', async () => {
@@ -326,9 +339,53 @@ test('clearing a field restores the frontmatter fallback', async () => {
   const skill = JSON.parse(cleared.body).skill;
   assert.equal(skill.category, 'Uncategorized');
   assert.equal(skill.author, 'Front Author', 'manual value is gone, metadata.author returns');
+  assert.equal(skill.manualCategory, '');
+  assert.equal(skill.manualAuthor, '');
 
   const stored = JSON.parse(readFileSync(annotationFile, 'utf8'));
   assert.equal(stored.skills['fallback-skill'], undefined);
+});
+
+test('mutating routes return the annotated summary so tags survive a toggle', async () => {
+  const result = await call('/toggle', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({ name: 'demo', surface: 'model', enabled: false }),
+  });
+  assert.equal(result.status, 200);
+  const skill = JSON.parse(result.body).skill;
+  assert.equal(skill.modelInvocable, false);
+  assert.equal(skill.manualCategory, 'Review', 'the toggle response keeps the manual category');
+  assert.equal(skill.manualAuthor, 'Dex Horthy', 'the toggle response keeps the manual author');
+  assert.equal(skill.category, 'Review', 'the effective category stays annotated');
+  assert.equal(skill.author, 'Dex Horthy', 'the effective author stays annotated');
+});
+
+test('deleting a skill removes its annotation entry', async () => {
+  writeSkillWith('doomed-skill', ['metadata:', '  author: Front Author']);
+  const annotated = await call('/annotate', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({ name: 'doomed-skill', category: 'temporary', author: 'Manual Person' }),
+  });
+  assert.equal(annotated.status, 200);
+  const before = JSON.parse(readFileSync(annotationFile, 'utf8'));
+  assert.equal(before.skills['doomed-skill'].category, 'temporary');
+  assert.equal(before.skills.demo.category, 'Review', 'other annotations are present before the delete');
+
+  const removed = await call('/delete', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({ name: 'doomed-skill', confirm: 'doomed-skill' }),
+  });
+  assert.equal(removed.status, 200);
+
+  const stored = JSON.parse(readFileSync(annotationFile, 'utf8'));
+  assert.equal(stored.skills['doomed-skill'], undefined, 'the deleted skill no longer has an annotation');
+  assert.equal(stored.skills.demo.category, 'Review', 'other annotations survive');
+
+  const state = JSON.parse((await call('/state')).body);
+  assert.equal(stateSkill(state, 'doomed-skill'), undefined, 'the deleted skill is gone from the deck');
 });
 
 test('annotate rejects unknown skills and non-JSON bodies', async () => {
@@ -355,8 +412,9 @@ test('annotate rejects unknown skills and non-JSON bodies', async () => {
 });
 
 test('a malformed annotation file degrades to an empty set and a write recovers it', async () => {
-  mkdirSync(join(home, 'skill-deck'), { recursive: true });
-  writeFileSync(annotationFile, '{ this is not json', 'utf8');
+  mkdirSync(annotationDir, { recursive: true });
+  const malformed = '{ this is not json';
+  writeFileSync(annotationFile, malformed, 'utf8');
   const result = await call('/state');
   assert.equal(result.status, 200);
   const payload = JSON.parse(result.body);
@@ -374,4 +432,30 @@ test('a malformed annotation file degrades to an empty set and a write recovers 
   const stored = JSON.parse(readFileSync(annotationFile, 'utf8'));
   assert.equal(stored.version, 1);
   assert.equal(stored.skills.demo.category, 'recovered');
+
+  const backups = annotationBackups();
+  assert.equal(backups.length, 1, 'the corrupt file is preserved before it is overwritten');
+  assert.equal(readFileSync(join(annotationDir, backups[0]), 'utf8'), malformed);
+});
+
+test('an unknown annotation version is preserved before a write replaces it', async () => {
+  const future = JSON.stringify({ version: 99, skills: { demo: { category: 'future' } } });
+  writeFileSync(annotationFile, future, 'utf8');
+  const state = JSON.parse((await call('/state')).body);
+  assert.equal(stateSkill(state, 'demo').category, 'Uncategorized', 'an unknown version is ignored');
+
+  const saved = await call('/annotate', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({ name: 'demo', category: 'current', author: 'Someone' }),
+  });
+  assert.equal(saved.status, 200);
+  const stored = JSON.parse(readFileSync(annotationFile, 'utf8'));
+  assert.equal(stored.version, 1);
+  assert.equal(stored.skills.demo.category, 'current');
+
+  const backups = annotationBackups();
+  assert.equal(backups.length, 2, 'the unknown-version file joins the earlier backup');
+  const preserved = backups.map((name) => readFileSync(join(annotationDir, name), 'utf8'));
+  assert.ok(preserved.includes(future), 'the unknown-version bytes are preserved');
 });

@@ -7,7 +7,20 @@ branch and release flow.
 
 ## Unreleased
 
-- Nothing yet.
+- **Skills page in the sidebar**: a localized **Skills** entry after the shipped
+  pages opens the deck in the center column; Settings → Skills keeps working.
+- **Three views over one deck**: List, a grouped Cards wall, and a hand-written
+  treemap Map. Cards and the map group by category, author, or root, with group
+  counts, and the chosen view and grouping survive navigation.
+- **Annotations without touching `SKILL.md`**: category and author live in
+  `$DSH_HOME/skill-deck/annotations.json`; authors are imported from frontmatter,
+  and category suggestions come from values already in use. The file is written
+  atomically, a malformed or newer-version copy is preserved next to it, and
+  deleting a skill removes its entry.
+- Cards are keyboard-focusable with accessible names and focus styles; the map
+  assigns a distinct color to every group and keeps those colors stable while
+  filtering.
+- The deck stays zero-build and adds no runtime dependencies.
 
 ## 0.3.0 — 2026-11-22
 

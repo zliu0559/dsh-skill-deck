@@ -17,7 +17,6 @@ window.__ModuleLoader__.load({
     const UNCATEGORIZED = 'Uncategorized';
     const UNKNOWN_AUTHOR = 'Unknown';
     const VIEWS = ['list', 'cards', 'map'];
-    const GROUPINGS = ['category', 'author', 'root'];
     const VIEW_KEY = NS + '/view';
     const GROUP_KEY = NS + '/groupBy';
 
@@ -97,6 +96,7 @@ window.__ModuleLoader__.load({
       authorLabel: '作者',
       uncategorized: '未分类',
       unknownAuthor: '未知作者',
+      unknownRoot: '未知来源',
       annotationTitle: '分类与作者',
       annotationCategory: '分类',
       annotationCategoryHint: '可以从已有分类里选，也可以输入新的；留空表示未分类。',
@@ -195,6 +195,7 @@ window.__ModuleLoader__.load({
       authorLabel: 'Author',
       uncategorized: 'Uncategorized',
       unknownAuthor: 'Unknown',
+      unknownRoot: 'Unknown root',
       annotationTitle: 'Category and author',
       annotationCategory: 'Category',
       annotationCategoryHint: 'Pick an existing category or type a new one; leave it empty for Uncategorized.',
@@ -247,6 +248,7 @@ window.__ModuleLoader__.load({
       .deck-group-count { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 18px; padding: 0 6px; border-radius: 999px; background: rgba(127,127,127,.16); font-size: 10px; font-weight: 600; }
       .deck-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; align-items: stretch; }
       .deck-card { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 12px 14px; border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.22)); border-radius: var(--dsw-radius-lg, 10px); }
+      .deck-card:focus-visible { outline: 2px solid var(--dsw-focus-ring-color, #3b82f6); outline-offset: 2px; }
       .deck-card-name { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
       .deck-card-desc { font-size: 12px; line-height: 1.5; color: var(--dsw-alias-label-secondary, inherit); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
       .deck-card-meta { display: flex; gap: 8px; flex-wrap: wrap; font-size: 11px; color: var(--dsw-alias-label-caption, inherit); }
@@ -368,11 +370,11 @@ window.__ModuleLoader__.load({
     }
 
     function displayCategory(value) {
-      return !value || value === UNCATEGORIZED ? t('uncategorized') : value;
+      return !value || value.toLowerCase() === UNCATEGORIZED.toLowerCase() ? t('uncategorized') : value;
     }
 
     function displayAuthor(value) {
-      return !value || value === UNKNOWN_AUTHOR ? t('unknownAuthor') : value;
+      return !value || value.toLowerCase() === UNKNOWN_AUTHOR.toLowerCase() ? t('unknownAuthor') : value;
     }
 
     function readPreference(key, allowed, fallback) {
@@ -393,33 +395,64 @@ window.__ModuleLoader__.load({
       }
     }
 
-    function groupValue(skill, dimension) {
-      if (dimension === 'author') return (skill.author || '').trim();
-      if (dimension === 'root') return (skill.root || '').trim();
-      return (skill.category || '').trim();
-    }
+    /**
+     * One descriptor per grouping axis: how to read the value, which values are
+     * the fallback bucket, and how the group heading is displayed. Adding an
+     * axis means adding an entry here (and its labels), not editing several
+     * cascades and the selector.
+     */
+    const GROUP_AXES = {
+      category: {
+        labelKey: 'groupByCategory',
+        value: (skill) => skill.category,
+        fallback: (value) => value === '' || value.toLowerCase() === UNCATEGORIZED.toLowerCase(),
+        fallbackLabel: () => t('uncategorized'),
+      },
+      author: {
+        labelKey: 'groupByAuthor',
+        value: (skill) => skill.author,
+        fallback: (value) => value === '' || value.toLowerCase() === UNKNOWN_AUTHOR.toLowerCase(),
+        fallbackLabel: () => t('unknownAuthor'),
+      },
+      root: {
+        labelKey: 'groupByRoot',
+        value: (skill) => skill.root,
+        display: (value, rootLabels) => rootLabels.get(value) ?? value,
+        fallback: (value) => value === '',
+        fallbackLabel: () => t('unknownRoot'),
+      },
+    };
+    const GROUPINGS = Object.keys(GROUP_AXES);
 
-    function isFallbackGroup(value, dimension) {
-      if (value === '') return true;
-      if (dimension === 'category') return value.toLowerCase() === UNCATEGORIZED.toLowerCase();
-      if (dimension === 'author') return value.toLowerCase() === UNKNOWN_AUTHOR.toLowerCase();
-      return false;
+    function groupLabelFor(axis, value, fallback, rootLabels) {
+      if (fallback) return axis.fallbackLabel();
+      return axis.display ? axis.display(value, rootLabels) : value;
     }
 
     /**
      * Group the already-filtered skills. Values compare trimmed and
      * case-insensitively; the first spelling seen is displayed. Sections sort
      * by descending count then name, with the fallback group always last.
+     * @param {Array<object>} skills
+     * @param {string} dimension
+     * @param {Map<string, string>} [rootLabels] root id to display label
      */
-    function groupSkills(skills, dimension) {
+    function groupSkills(skills, dimension, rootLabels = new Map()) {
+      const axis = GROUP_AXES[dimension] ?? GROUP_AXES.category;
       const groups = new Map();
       for (const skill of skills) {
-        const value = groupValue(skill, dimension);
-        const fallback = isFallbackGroup(value, dimension);
+        const value = String(axis.value(skill) ?? '').trim();
+        const fallback = axis.fallback(value);
         const key = fallback ? '\u0000fallback' : value.toLowerCase();
         let group = groups.get(key);
         if (!group) {
-          group = { key, label: value, fallback, count: 0, skills: [] };
+          group = {
+            key,
+            label: groupLabelFor(axis, value, fallback, rootLabels),
+            fallback,
+            count: 0,
+            skills: [],
+          };
           groups.set(key, group);
         }
         group.count += 1;
@@ -432,29 +465,16 @@ window.__ModuleLoader__.load({
       });
     }
 
-    function groupLabel(group, dimension) {
-      if (!group.fallback) return group.label;
-      return dimension === 'author' || dimension === 'root' ? t('unknownAuthor') : t('uncategorized');
-    }
-
-    // Group colors for the map; the legend uses the same order and palette.
-    const MAP_COLORS = [
-      '#2563eb',
-      '#16a34a',
-      '#d97706',
-      '#9333ea',
-      '#dc2626',
-      '#0891b2',
-      '#ca8a04',
-      '#db2777',
-      '#4f46e5',
-      '#059669',
-      '#ea580c',
-      '#7c3aed',
-    ];
-
+    /**
+     * A distinct color for every group index. Hues walk by the golden angle so
+     * a deck with more than a dozen groups still gets one color per legend
+     * entry instead of wrapping a fixed palette.
+     */
     function mapColor(index) {
-      return MAP_COLORS[index % MAP_COLORS.length];
+      const hue = ((index * 137.508) % 360).toFixed(2);
+      const saturation = index % 3 === 0 ? 68 : 60;
+      const lightness = index % 2 === 0 ? 42 : 50;
+      return 'hsl(' + hue + ', ' + saturation + '%, ' + lightness + '%)';
     }
 
     /**
@@ -535,10 +555,12 @@ window.__ModuleLoader__.load({
     }
 
     function SkillMap(props) {
-      const { groups, groupBy, busy, onEdit } = props;
+      const { groups, busy, onEdit } = props;
+      const colors = props.colors ?? new Map();
+      const colorFor = (group) => colors.get(group.key) ?? mapColor(0);
       const entries = [];
-      groups.forEach((group, index) => {
-        const color = mapColor(index);
+      groups.forEach((group) => {
+        const color = colorFor(group);
         for (const skill of group.skills) entries.push({ skill, color, weight: skillWeight(skill) });
       });
       const layout = squarifySkills(entries);
@@ -583,12 +605,12 @@ window.__ModuleLoader__.load({
         h(
           'div',
           { className: 'deck-map-legend', role: 'list', 'aria-label': t('mapLegend') },
-          groups.map((group, index) =>
+          groups.map((group) =>
             h(
               'div',
               { key: group.key, className: 'deck-legend-item', role: 'listitem', 'data-group': group.key },
-              h('span', { className: 'deck-legend-swatch', style: { backgroundColor: mapColor(index) } }),
-              h('span', { className: 'deck-legend-label' }, groupLabel(group, groupBy)),
+              h('span', { className: 'deck-legend-swatch', style: { backgroundColor: colorFor(group) } }),
+              h('span', { className: 'deck-legend-label' }, group.label),
               h('span', { className: 'deck-legend-count' }, String(group.count)),
             ),
           ),
@@ -674,6 +696,60 @@ window.__ModuleLoader__.load({
       );
     }
 
+    function SkillBadges(props) {
+      const { skill } = props;
+      return h(
+        React.Fragment,
+        null,
+        skill.modelInvocable ? h(Badge, { key: 'model' }, t('modelSurface')) : null,
+        skill.userInvocable ? h(Badge, { key: 'user', muted: true }, t('userSurface')) : null,
+        skill.valid ? null : h(Badge, { key: 'invalid', warn: true }, t('invalid')),
+      );
+    }
+
+    function SurfaceToggles(props) {
+      const { skill, busy, onToggle } = props;
+      return h(
+        'div',
+        { className: 'deck-switches' },
+        h(SurfaceSwitch, {
+          on: skill.modelInvocable,
+          label: t('modelSurface'),
+          title: t('modelHint'),
+          disabled: busy === skill.name + ':model',
+          onClick: () => onToggle(skill, 'model', !skill.modelInvocable),
+        }),
+        h(SurfaceSwitch, {
+          on: skill.userInvocable,
+          label: t('userSurface'),
+          title: t('userHint'),
+          disabled: busy === skill.name + ':user',
+          onClick: () => onToggle(skill, 'user', !skill.userInvocable),
+        }),
+      );
+    }
+
+    function SkillActions(props) {
+      const { skill, busy, className, onEdit, onAnnotate, onReveal, onDuplicate, onRemove } = props;
+      return h(
+        'div',
+        { className },
+        h(
+          'button',
+          {
+            className: 'deck-btn',
+            disabled: busy === skill.name + ':read',
+            onClick: () => onEdit(skill),
+          },
+          t('edit'),
+        ),
+        h('button', { className: 'deck-btn', onClick: () => onAnnotate && onAnnotate(skill) }, t('tag')),
+        h('button', { className: 'deck-btn', onClick: () => onReveal(skill) }, t('reveal')),
+        h('button', { className: 'deck-btn', onClick: () => onDuplicate(skill) }, t('duplicate')),
+        h('button', { className: 'deck-btn danger', onClick: () => onRemove(skill) }, t('remove')),
+      );
+    }
+
     function SkillRow(props) {
       const { skill, busy, onToggle, onEdit, onReveal, onDuplicate, onRemove, onAnnotate } = props;
       return h(
@@ -682,14 +758,7 @@ window.__ModuleLoader__.load({
         h(
           'div',
           null,
-          h(
-            'div',
-            { className: 'deck-name' },
-            skill.name,
-            skill.modelInvocable ? h(Badge, null, t('modelSurface')) : null,
-            skill.userInvocable ? h(Badge, { muted: true }, t('userSurface')) : null,
-            skill.valid ? null : h(Badge, { warn: true }, t('invalid')),
-          ),
+          h('div', { className: 'deck-name' }, skill.name, h(SkillBadges, { skill })),
           h('div', { className: 'deck-desc' }, skill.description || t('invalid')),
           h(
             'div',
@@ -701,41 +770,17 @@ window.__ModuleLoader__.load({
             skill.updatedAt ? h('span', null, skill.updatedAt.slice(0, 10)) : null,
           ),
         ),
-        h(
-          'div',
-          { className: 'deck-switches' },
-          h(SurfaceSwitch, {
-            on: skill.modelInvocable,
-            label: t('modelSurface'),
-            title: t('modelHint'),
-            disabled: busy === skill.name + ':model',
-            onClick: () => onToggle(skill, 'model', !skill.modelInvocable),
-          }),
-          h(SurfaceSwitch, {
-            on: skill.userInvocable,
-            label: t('userSurface'),
-            title: t('userHint'),
-            disabled: busy === skill.name + ':user',
-            onClick: () => onToggle(skill, 'user', !skill.userInvocable),
-          }),
-        ),
-        h(
-          'div',
-          { className: 'deck-actions' },
-          h(
-            'button',
-            {
-              className: 'deck-btn',
-              disabled: busy === skill.name + ':read',
-              onClick: () => onEdit(skill),
-            },
-            t('edit'),
-          ),
-          h('button', { className: 'deck-btn', onClick: () => onAnnotate && onAnnotate(skill) }, t('tag')),
-          h('button', { className: 'deck-btn', onClick: () => onReveal(skill) }, t('reveal')),
-          h('button', { className: 'deck-btn', onClick: () => onDuplicate(skill) }, t('duplicate')),
-          h('button', { className: 'deck-btn danger', onClick: () => onRemove(skill) }, t('remove')),
-        ),
+        h(SurfaceToggles, { skill, busy, onToggle }),
+        h(SkillActions, {
+          skill,
+          busy,
+          className: 'deck-actions',
+          onEdit,
+          onAnnotate,
+          onReveal,
+          onDuplicate,
+          onRemove,
+        }),
       );
     }
 
@@ -743,61 +788,72 @@ window.__ModuleLoader__.load({
       const { skill, busy, onToggle, onEdit, onReveal, onDuplicate, onRemove, onAnnotate } = props;
       return h(
         'article',
-        { className: 'deck-card', 'data-skill': skill.name },
-        h(
-          'div',
-          { className: 'deck-card-name' },
-          skill.name,
-          skill.modelInvocable ? h(Badge, null, t('modelSurface')) : null,
-          skill.userInvocable ? h(Badge, { muted: true }, t('userSurface')) : null,
-          skill.valid ? null : h(Badge, { warn: true }, t('invalid')),
-        ),
+        {
+          className: 'deck-card',
+          'data-skill': skill.name,
+          tabIndex: 0,
+          'aria-label': skill.name,
+        },
+        h('div', { className: 'deck-card-name' }, skill.name, h(SkillBadges, { skill })),
         h('div', { className: 'deck-card-desc' }, skill.description || t('invalid')),
         h(
           'div',
           { className: 'deck-card-meta' },
           h('span', null, skill.root),
-          h('span', { className: 'deck-tag' }, t('categoryLabel') + ' · ' + displayCategory(skill.category)),
-          h('span', { className: 'deck-tag' }, t('authorLabel') + ' · ' + displayAuthor(skill.author)),
           h('span', null, skill.files + ' ' + t('files') + ' · ' + formatBytes(skill.bytes)),
         ),
         h(
           'div',
           { className: 'deck-card-controls' },
+          h(SurfaceToggles, { skill, busy, onToggle }),
+          h(SkillActions, {
+            skill,
+            busy,
+            className: 'deck-card-actions',
+            onEdit,
+            onAnnotate,
+            onReveal,
+            onDuplicate,
+            onRemove,
+          }),
+        ),
+      );
+    }
+
+    function GroupHead(props) {
+      const { group } = props;
+      return h(
+        'h4',
+        { className: 'deck-group-head' },
+        h('span', { className: 'deck-group-title' }, group.label),
+        h('span', { className: 'deck-group-count' }, String(group.count)),
+      );
+    }
+
+    function SkillList(props) {
+      const { skills, rowProps } = props;
+      return h(
+        'ul',
+        { className: 'deck-list' },
+        skills.map((skill) => h(SkillRow, rowProps(skill))),
+      );
+    }
+
+    function SkillCardWall(props) {
+      const { groups, cardProps } = props;
+      return h(
+        'div',
+        { className: 'deck-cards' },
+        groups.map((group) =>
           h(
-            'div',
-            { className: 'deck-switches' },
-            h(SurfaceSwitch, {
-              on: skill.modelInvocable,
-              label: t('modelSurface'),
-              title: t('modelHint'),
-              disabled: busy === skill.name + ':model',
-              onClick: () => onToggle(skill, 'model', !skill.modelInvocable),
-            }),
-            h(SurfaceSwitch, {
-              on: skill.userInvocable,
-              label: t('userSurface'),
-              title: t('userHint'),
-              disabled: busy === skill.name + ':user',
-              onClick: () => onToggle(skill, 'user', !skill.userInvocable),
-            }),
-          ),
-          h(
-            'div',
-            { className: 'deck-card-actions' },
+            'section',
+            { key: group.key, className: 'deck-group', 'data-group': group.key },
+            h(GroupHead, { group }),
             h(
-              'button',
-              {
-                className: 'deck-btn',
-                disabled: busy === skill.name + ':read',
-                onClick: () => onEdit(skill),
-              },
-              t('edit'),
+              'div',
+              { className: 'deck-card-grid' },
+              group.skills.map((skill) => h(SkillCard, cardProps(skill))),
             ),
-            h('button', { className: 'deck-btn', onClick: () => onAnnotate && onAnnotate(skill) }, t('tag')),
-            h('button', { className: 'deck-btn', onClick: () => onReveal(skill) }, t('reveal')),
-            h('button', { className: 'deck-btn', onClick: () => onDuplicate(skill) }, t('duplicate')),
-            h('button', { className: 'deck-btn danger', onClick: () => onRemove(skill) }, t('remove')),
           ),
         ),
       );
@@ -946,6 +1002,10 @@ window.__ModuleLoader__.load({
     function AnnotationDialog(props) {
       const { skill, form, suggestions, busy, error, onChange, onSubmit, onClose } = props;
       const listId = NS + '-category-suggestions';
+      // Only a skill without a manual author gets a fallback placeholder; once
+      // the user has pinned one, the field carries that value instead.
+      const authorFallback =
+        !skill.manualAuthor && skill.author && skill.author !== UNKNOWN_AUTHOR ? skill.author : '';
       return h(
         Modal,
         { title: t('annotationTitle') + ' · ' + skill.name, onClose },
@@ -978,6 +1038,7 @@ window.__ModuleLoader__.load({
             h('input', {
               className: 'deck-input',
               value: form.author,
+              placeholder: authorFallback || undefined,
               spellCheck: false,
               'aria-label': t('annotationAuthor'),
               onChange: (event) => onChange('author', event.target.value),
@@ -1127,9 +1188,12 @@ window.__ModuleLoader__.load({
 
       const openAnnotation = useCallback((skill) => {
         setAnnotating(skill);
+        // Pre-fill what the user actually saved. The effective author may come
+        // from frontmatter and must not be pinned into the annotation file by a
+        // category-only edit.
         setAnnotationForm({
-          category: skill.category && skill.category !== UNCATEGORIZED ? skill.category : '',
-          author: skill.author && skill.author !== UNKNOWN_AUTHOR ? skill.author : '',
+          category: skill.manualCategory ?? '',
+          author: skill.manualAuthor ?? '',
         });
         setAnnotationError('');
       }, []);
@@ -1330,8 +1394,8 @@ window.__ModuleLoader__.load({
       const categorySuggestions = useMemo(() => {
         const seen = new Map();
         for (const skill of state.skills) {
-          const value = (skill.category || '').trim();
-          if (!value || value === UNCATEGORIZED) continue;
+          const value = (skill.manualCategory || '').trim();
+          if (!value) continue;
           const key = value.toLowerCase();
           if (!seen.has(key)) seen.set(key, value);
         }
@@ -1352,7 +1416,24 @@ window.__ModuleLoader__.load({
         });
       }, [filter, query, state.skills]);
 
-      const groups = useMemo(() => groupSkills(visible, groupBy), [groupBy, visible]);
+      const rootLabels = useMemo(
+        () => new Map(state.roots.map((root) => [root.id, root.label])),
+        [state.roots],
+      );
+
+      const groups = useMemo(() => groupSkills(visible, groupBy, rootLabels), [groupBy, rootLabels, visible]);
+
+      // Colors are assigned over the whole deck, not the visible subset, so
+      // filtering a group out and back in never repaints it or steals another
+      // group's color.
+      const fullGroups = useMemo(
+        () => groupSkills(state.skills, groupBy, rootLabels),
+        [groupBy, rootLabels, state.skills],
+      );
+      const groupColors = useMemo(
+        () => new Map(fullGroups.map((group, index) => [group.key, mapColor(index)])),
+        [fullGroups],
+      );
 
       const skillProps = (skill) => ({
         key: skill.name,
@@ -1368,22 +1449,6 @@ window.__ModuleLoader__.load({
           setConfirmText('');
         },
       });
-
-      const rows = visible.map((skill) => h(SkillRow, skillProps(skill)));
-
-      const cards = groups.map((group) =>
-        h(
-          'section',
-          { key: group.key, className: 'deck-group', 'data-group': group.key },
-          h(
-            'h4',
-            { className: 'deck-group-head' },
-            h('span', { className: 'deck-group-title' }, groupLabel(group, groupBy)),
-            h('span', { className: 'deck-group-count' }, String(group.count)),
-          ),
-          h('div', { className: 'deck-card-grid' }, group.skills.map((skill) => h(SkillCard, skillProps(skill)))),
-        ),
-      );
 
       const body =
         state.status === 'loading'
@@ -1402,10 +1467,10 @@ window.__ModuleLoader__.load({
             : visible.length === 0
               ? h('div', { className: 'deck-empty' }, state.skills.length === 0 ? t('empty') : t('noMatch'))
               : view === 'map'
-                ? h(SkillMap, { groups, groupBy, busy, onEdit: openEditor })
+                ? h(SkillMap, { groups, busy, onEdit: openEditor, colors: groupColors })
                 : view === 'cards'
-                  ? h('div', { className: 'deck-cards' }, cards)
-                  : h('ul', { className: 'deck-list' }, rows);
+                  ? h(SkillCardWall, { groups, cardProps: skillProps })
+                  : h(SkillList, { skills: visible, rowProps: skillProps });
 
       return h(
         'div',
@@ -1492,9 +1557,9 @@ window.__ModuleLoader__.load({
                 'aria-label': t('groupBy'),
                 onChange: (event) => chooseGroupBy(event.target.value),
               },
-              h('option', { value: 'category' }, t('groupByCategory')),
-              h('option', { value: 'author' }, t('groupByAuthor')),
-              h('option', { value: 'root' }, t('groupByRoot')),
+              GROUPINGS.map((id) =>
+                h('option', { key: id, value: id }, t(GROUP_AXES[id].labelKey)),
+              ),
             ),
             h('button', { className: 'deck-btn', onClick: openCreate }, t('create')),
             h(

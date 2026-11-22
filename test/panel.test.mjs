@@ -57,6 +57,8 @@ let profile = {
       error: null,
       category: 'Uncategorized',
       author: 'Unknown',
+      manualCategory: '',
+      manualAuthor: '',
     },
     {
       name: 'docs-skill',
@@ -75,6 +77,8 @@ let profile = {
       error: null,
       category: 'documentation',
       author: 'Docs Writer',
+      manualCategory: 'documentation',
+      manualAuthor: '',
     },
     {
       name: 'lint-skill',
@@ -93,6 +97,8 @@ let profile = {
       error: null,
       category: 'Documentation',
       author: 'docs writer',
+      manualCategory: 'Documentation',
+      manualAuthor: '',
     },
     {
       name: 'review-skill',
@@ -111,6 +117,8 @@ let profile = {
       error: 'missing metadata',
       category: 'review',
       author: 'Dex Horthy',
+      manualCategory: 'review',
+      manualAuthor: 'Dex Horthy',
     },
   ],
   totals: { skills: 4, modelInvocable: 3, userInvocable: 2, invalid: 1 },
@@ -139,7 +147,11 @@ globalThis.fetch = async (url, init) => {
         skill.name === body.name ? { ...skill, modelInvocable: body.enabled } : skill,
       ),
     };
-    return json({ ok: true, skill: profile.skills[0], revision: 'rev-2' });
+    return json({
+      ok: true,
+      skill: profile.skills.find((skill) => skill.name === body.name),
+      revision: 'rev-2',
+    });
   }
   if (path === '/dsh-skill-deck/save') {
     return json({ ok: true, skill: { ...profile.skills[0] }, revision: 'rev-3' });
@@ -171,6 +183,8 @@ globalThis.fetch = async (url, init) => {
           ...skill,
           category: category || 'Uncategorized',
           author: author || fallbackAuthors[skill.name] || 'Unknown',
+          manualCategory: category,
+          manualAuthor: author,
         };
       }),
     };
@@ -454,11 +468,36 @@ test('the group-by selector regroups the cards by author and root', async () => 
   assert.deepEqual(
     groupSummaries().map((group) => [group.title, group.count]),
     [
-      ['user-agents', '2'],
-      ['user-dsh', '2'],
+      ['~/.agents/skills', '2'],
+      ['~/.dsh/skills', '2'],
     ],
   );
 
+  await pick(groupBy, 'category');
+});
+
+test('a blank root gets its own fallback label instead of the author fallback', async () => {
+  profile = {
+    ...JSON.parse(JSON.stringify(baseProfile)),
+    skills: [
+      { ...baseProfile.skills[0], name: 'rootless-skill', root: '', rootPath: '' },
+      { ...baseProfile.skills[1] },
+    ],
+    totals: { ...baseProfile.totals, skills: 2 },
+  };
+  await click(buttonByText('Refresh'));
+  const groupBy = container.querySelector('select.deck-groupby');
+  await pick(groupBy, 'root');
+  assert.deepEqual(
+    groupSummaries().map((group) => [group.title, group.count]),
+    [
+      ['~/.dsh/skills', '1'],
+      ['Unknown root', '1'],
+    ],
+  );
+
+  profile = JSON.parse(JSON.stringify(baseProfile));
+  await click(buttonByText('Refresh'));
   await pick(groupBy, 'category');
 });
 
@@ -518,10 +557,64 @@ test('card toggles and actions use the existing routes and confirmation', async 
     category: 'review',
     author: 'Dex Horthy',
   });
-  assert.match(cardFor('demo').textContent, /review/);
-  assert.match(cardFor('demo').textContent, /Dex Horthy/);
   const reviewGroup = groupSummaries().find((group) => group.title === 'review');
   assert.deepEqual(reviewGroup, { title: 'review', count: '2', cards: ['demo', 'review-skill'] });
+
+  await click(buttonByText('List'));
+  const demoRow = rowFor('demo');
+  assert.match(demoRow.textContent, /review/, 'the list row reflects the saved category');
+  assert.match(demoRow.textContent, /Dex Horthy/, 'the list row reflects the saved author');
+  await click(buttonByText('Cards'));
+});
+
+test('cards are named, keyboard-focusable articles and drop the annotation chips', async () => {
+  const demoCard = cardFor('demo');
+  assert.equal(demoCard.tagName, 'ARTICLE');
+  assert.equal(demoCard.tabIndex, 0, 'the card itself is reachable by keyboard');
+  assert.equal(demoCard.getAttribute('aria-label'), 'demo', 'the card has an accessible name');
+  assert.equal(demoCard.querySelector('.deck-tag'), null, 'cards do not repeat the category or author chips');
+
+  await click(buttonByText('List'));
+  const tags = [...rowFor('demo').querySelectorAll('.deck-tag')].map((node) => node.textContent);
+  assert.equal(tags.length, 2, 'the list row keeps the category and author chips');
+  assert.match(tags.join(' '), /Category · review/);
+  assert.match(tags.join(' '), /Author · Dex Horthy/);
+  await click(buttonByText('Cards'));
+});
+
+test('the annotation editor pre-fills manual values only and hints at the frontmatter author', async () => {
+  await click(buttonIn(cardFor('docs-skill'), 'Tag'));
+  let inputs = [...container.querySelectorAll('.deck-modal input')];
+  assert.equal(inputs[0].value, 'documentation', 'the manual category is pre-filled');
+  assert.equal(inputs[1].value, '', 'a frontmatter-only author is not pinned as a manual value');
+  assert.equal(inputs[1].placeholder, 'Docs Writer', 'the frontmatter author is shown as a hint');
+
+  calls.length = 0;
+  await click(buttonByText('Save tags'));
+  assert.deepEqual(calls.find((call) => call.path === '/dsh-skill-deck/annotate')?.body, {
+    name: 'docs-skill',
+    category: 'documentation',
+    author: '',
+  });
+
+  await click(buttonIn(cardFor('docs-skill'), 'Tag'));
+  inputs = [...container.querySelectorAll('.deck-modal input')];
+  assert.equal(inputs[1].value, '', 'saving a category-only edit leaves the author manual value empty');
+  assert.equal(inputs[1].placeholder, 'Docs Writer', 'the frontmatter fallback still applies');
+  await click(buttonByText('Cancel'));
+
+  await click(buttonByText('List'));
+  assert.match(rowFor('docs-skill').textContent, /Docs Writer/, 'the effective author still comes from frontmatter');
+  await click(buttonByText('Cards'));
+
+  calls.length = 0;
+  await click(buttonIn(cardFor('docs-skill'), 'Model'));
+  assert.ok(calls.some((call) => call.path === '/dsh-skill-deck/toggle'), 'toggle requested');
+  await click(buttonIn(cardFor('docs-skill'), 'Tag'));
+  inputs = [...container.querySelectorAll('.deck-modal input')];
+  assert.equal(inputs[0].value, 'documentation', 'a toggle response keeps the manual category');
+  assert.equal(inputs[1].value, '', 'a toggle response does not invent a manual author');
+  await click(buttonByText('Cancel'));
 });
 
 test('search and the status filter narrow the working set before grouping', async () => {
@@ -578,7 +671,7 @@ test('the view and grouping survive a remount', async () => {
   assert.equal(otherContainer.querySelector('select.deck-groupby').value, 'root');
   assert.deepEqual(
     [...otherContainer.querySelectorAll('.deck-group-title')].map((node) => node.textContent.trim()),
-    ['user-agents', 'user-dsh'],
+    ['~/.agents/skills', '~/.dsh/skills'],
   );
   await act(async () => {
     otherRoot.unmount();
@@ -760,11 +853,54 @@ test('map colors follow the grouping dimension and a legend decodes them', async
   assert.deepEqual(
     legendEntries().map((entry) => [entry.label, entry.count]),
     [
-      ['user-agents', '2'],
-      ['user-dsh', '2'],
+      ['~/.agents/skills', '2'],
+      ['~/.dsh/skills', '2'],
     ],
   );
   await pick(container.querySelector('select.deck-groupby'), 'category');
+});
+
+test('map colors stay unique and stable for more than twelve groups', async () => {
+  const skills = Array.from({ length: 14 }, (_, index) => ({
+    ...baseProfile.skills[0],
+    name: 'group-skill-' + String(index).padStart(2, '0'),
+    category: 'category-' + index,
+    manualCategory: 'category-' + index,
+    author: 'author-' + index,
+    manualAuthor: 'author-' + index,
+  }));
+  profile = { ...JSON.parse(JSON.stringify(baseProfile)), skills, totals: { ...baseProfile.totals, skills: skills.length } };
+  await click(buttonByText('Refresh'));
+  assert.equal(mapBlocks().length, 14);
+
+  const fullLegend = legendEntries();
+  assert.equal(fullLegend.length, 14);
+  assert.equal(new Set(fullLegend.map((entry) => entry.color)).size, 14, 'every group has its own color');
+  const colorByLabel = new Map(fullLegend.map((entry) => [entry.label, entry.color]));
+
+  const search = container.querySelector('input[type="search"]');
+  await act(async () => {
+    setValue(search, 'group-skill-03');
+  });
+  await settle();
+  assert.equal(mapBlocks().length, 1);
+  assert.equal(
+    mapBlockFor('group-skill-03').style.backgroundColor,
+    colorByLabel.get('category-3'),
+    'filtering does not reassign a group color',
+  );
+  assert.deepEqual(
+    legendEntries().map((entry) => [entry.label, entry.count]),
+    [['category-3', '1']],
+  );
+
+  await act(async () => {
+    setValue(search, '');
+  });
+  await settle();
+  profile = JSON.parse(JSON.stringify(baseProfile));
+  await click(buttonByText('Refresh'));
+  assert.equal(mapBlocks().length, 4);
 });
 
 test('search and the status filter narrow the map and its legend', async () => {

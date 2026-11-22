@@ -6,7 +6,7 @@
  * surfaces, save an edited document, move a skill to the trash, and open its
  * directory in the OS file manager.
  */
-import { annotateSkill, applyAnnotations } from './lib/annotations.js';
+import { annotateSkill, applyAnnotations, removeAnnotation } from './lib/annotations.js';
 import {
   createSkill,
   duplicateSkill,
@@ -60,6 +60,17 @@ function fail(response, error) {
   const message = error instanceof Error ? error.message : String(error);
   if (status >= 500) console.error('[dsh-skill-deck]', error);
   sendJson(response, status, { ok: false, error: message });
+}
+
+/**
+ * Store summaries know nothing about annotations. Every route that returns one
+ * overlays the plugin-owned values, so the client can replace a skill from any
+ * response without dropping its manual category or author.
+ * @param {{skill?: object}} result
+ */
+function withAnnotations(result) {
+  if (!result || !result.skill) return result;
+  return { ...result, skill: applyAnnotations([result.skill])[0] };
 }
 
 function readBody(request) {
@@ -227,7 +238,7 @@ export function apply(ctx) {
         description: String(payload.description ?? ''),
         scope: typeof payload.scope === 'string' ? payload.scope : undefined,
       });
-      sendJson(response, 200, { ok: true, ...result });
+      sendJson(response, 200, { ok: true, ...withAnnotations(result) });
     });
 
     route('/annotate', async (request, response) => {
@@ -252,13 +263,13 @@ export function apply(ctx) {
         name: String(payload.name ?? ''),
         newName: String(payload.newName ?? ''),
       });
-      sendJson(response, 200, { ok: true, ...result });
+      sendJson(response, 200, { ok: true, ...withAnnotations(result) });
     });
 
     route('/read', async (request, response) => {
       const payload = await readJson(request);
       const result = await readSkill(String(payload.name ?? ''));
-      sendJson(response, 200, { ok: true, ...result });
+      sendJson(response, 200, { ok: true, ...withAnnotations(result) });
     });
 
     route('/save', async (request, response) => {
@@ -271,7 +282,7 @@ export function apply(ctx) {
         content: payload.content,
         revision: typeof payload.revision === 'string' ? payload.revision : undefined,
       });
-      sendJson(response, 200, { ok: true, ...result });
+      sendJson(response, 200, { ok: true, ...withAnnotations(result) });
     });
 
     route('/toggle', async (request, response) => {
@@ -287,7 +298,7 @@ export function apply(ctx) {
         surface: payload.surface,
         enabled: payload.enabled,
       });
-      sendJson(response, 200, { ok: true, ...result });
+      sendJson(response, 200, { ok: true, ...withAnnotations(result) });
     });
 
     route('/delete', async (request, response) => {
@@ -296,6 +307,13 @@ export function apply(ctx) {
         name: String(payload.name ?? ''),
         confirm: String(payload.confirm ?? ''),
       });
+      // The skill is already in the trash; a failed annotation cleanup must not
+      // turn a successful removal into an error response.
+      try {
+        removeAnnotation(result.skill.name);
+      } catch (error) {
+        console.error('[dsh-skill-deck] could not remove the annotation entry', error);
+      }
       sendJson(response, 200, { ok: true, ...result });
     });
 
