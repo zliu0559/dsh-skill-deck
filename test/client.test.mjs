@@ -104,4 +104,5 @@ test('exports the cordis client shape and registers Settings, sidebar and main',
   const css = appended[0].textContent;
   assert.match(css, /\.deck-page\s*\{[^}]*height:\s*100%[^}]*overflow:\s*auto/, 'page owns its scroll container');
   assert.match(css, /var\(--dsh-frame-top-clearance/, 'page leaves the frame top strip clear');
+  assert.match(css, /\.deck-card:focus-visible\s*\{[^}]*outline:/, 'cards expose a visible focus style');
 });
