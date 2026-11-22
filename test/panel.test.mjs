@@ -57,8 +57,10 @@ let profile = {
       error: null,
       category: 'Uncategorized',
       author: 'Unknown',
+      series: '',
       manualCategory: '',
       manualAuthor: '',
+      manualSeries: '',
     },
     {
       name: 'docs-skill',
@@ -77,8 +79,10 @@ let profile = {
       error: null,
       category: 'documentation',
       author: 'Docs Writer',
+      series: 'Docs',
       manualCategory: 'documentation',
       manualAuthor: '',
+      manualSeries: 'Docs',
     },
     {
       name: 'lint-skill',
@@ -97,8 +101,10 @@ let profile = {
       error: null,
       category: 'Documentation',
       author: 'docs writer',
+      series: 'docs',
       manualCategory: 'Documentation',
       manualAuthor: '',
+      manualSeries: 'docs',
     },
     {
       name: 'review-skill',
@@ -117,8 +123,10 @@ let profile = {
       error: 'missing metadata',
       category: 'review',
       author: 'Dex Horthy',
+      series: 'Reviewers',
       manualCategory: 'review',
       manualAuthor: 'Dex Horthy',
+      manualSeries: 'Reviewers',
     },
   ],
   totals: { skills: 4, modelInvocable: 3, userInvocable: 2, invalid: 1 },
@@ -173,9 +181,18 @@ globalThis.fetch = async (url, init) => {
       'lint-skill': 'docs writer',
       'review-skill': 'Dex Horthy',
     };
+    const series = typeof body.series === 'string' ? body.series.trim() : undefined;
+    const previousSeries =
+      typeof body.previousSeries === 'string' ? body.previousSeries.trim().toLowerCase() : '';
     profile = {
       ...profile,
       skills: profile.skills.map((skill) => {
+        if (
+          previousSeries &&
+          String(skill.manualSeries ?? '').trim().toLowerCase() === previousSeries
+        ) {
+          return { ...skill, series: series ?? '', manualSeries: series ?? '' };
+        }
         if (skill.name !== body.name) return skill;
         const category = body.category.trim();
         const author = body.author.trim();
@@ -183,8 +200,10 @@ globalThis.fetch = async (url, init) => {
           ...skill,
           category: category || 'Uncategorized',
           author: author || fallbackAuthors[skill.name] || 'Unknown',
+          series: series === undefined ? skill.series : series,
           manualCategory: category,
           manualAuthor: author,
+          manualSeries: series === undefined ? skill.manualSeries : series,
         };
       }),
     };
@@ -289,12 +308,21 @@ function mapTileFor(name, scope = container) {
   return mapTiles(scope).find((tile) => tile.dataset.skill === name);
 }
 
-function mapSections(scope = container) {
-  return [...scope.querySelectorAll('.deck-map-section')].map((section) => ({
-    title: section.querySelector('.deck-group-title')?.textContent?.trim(),
-    count: section.querySelector('.deck-group-count')?.textContent?.trim(),
-    tiles: [...section.querySelectorAll('.deck-map-tile')].map((tile) => tile.dataset.skill),
+function mapModules(scope = container) {
+  return [...scope.querySelectorAll('.deck-map-module')].map((module) => ({
+    title: module.querySelector('.deck-map-module-title')?.textContent?.trim(),
+    count: module.querySelector('.deck-map-module-count')?.textContent?.trim(),
+    status: module.querySelector('.deck-map-module-status')?.textContent?.trim(),
+    tiles: [...module.querySelectorAll('.deck-map-tile')].map((tile) => tile.dataset.skill),
+    unassigned: module.dataset.unassigned === 'true',
+    empty: module.classList.contains('is-empty'),
   }));
+}
+
+function mapModuleFor(title, scope = container) {
+  return [...scope.querySelectorAll('.deck-map-module')].find(
+    (module) => module.querySelector('.deck-map-module-title')?.textContent?.trim() === title,
+  );
 }
 
 function legendEntries(scope = container) {
@@ -505,9 +533,10 @@ test('tagging a skill offers existing categories and saves it', async () => {
   const dialog = container.querySelector('.deck-modal');
   assert.ok(dialog, 'annotation editor opened');
   const inputs = [...dialog.querySelectorAll('input')];
-  assert.equal(inputs.length, 2, 'category and author fields');
+  assert.equal(inputs.length, 3, 'category, author and series fields');
   const suggestions = [...dialog.querySelectorAll('datalist option')].map((option) => option.value);
   assert.ok(suggestions.includes('documentation'), 'existing category is suggested: ' + suggestions.join(','));
+  assert.ok(suggestions.includes('Docs'), 'existing series is suggested: ' + suggestions.join(','));
 
   await act(async () => {
     setValue(inputs[0], 'review');
@@ -518,7 +547,12 @@ test('tagging a skill offers existing categories and saves it', async () => {
   await click(buttonByText('Save tags'));
 
   const annotate = calls.find((call) => call.path === '/dsh-skill-deck/annotate');
-  assert.deepEqual(annotate?.body, { name: 'demo', category: 'review', author: 'Dex Horthy' });
+  assert.deepEqual(annotate?.body, {
+    name: 'demo',
+    category: 'review',
+    author: 'Dex Horthy',
+    series: '',
+  });
   assert.equal(container.querySelector('.deck-modal'), null, 'editor closed after saving');
   assert.match(rowFor('demo').textContent, /review/);
   assert.match(rowFor('demo').textContent, /Dex Horthy/);
@@ -533,6 +567,7 @@ test('clearing category and author restores the fallback labels', async () => {
   const inputs = [...container.querySelectorAll('.deck-modal input')];
   assert.equal(inputs[0].value, 'review', 'editor starts from the saved category');
   assert.equal(inputs[1].value, 'Dex Horthy', 'editor starts from the saved author');
+  assert.equal(inputs[2].value, '', 'the manual series starts empty');
   await act(async () => {
     setValue(inputs[0], '');
     setValue(inputs[1], '');
@@ -541,9 +576,50 @@ test('clearing category and author restores the fallback labels', async () => {
   calls.length = 0;
   await click(buttonByText('Save tags'));
   const annotate = calls.find((call) => call.path === '/dsh-skill-deck/annotate');
-  assert.deepEqual(annotate?.body, { name: 'demo', category: '', author: '' });
+  assert.deepEqual(annotate?.body, { name: 'demo', category: '', author: '', series: '' });
   assert.match(rowFor('demo').textContent, /Uncategorized/);
   assert.match(rowFor('demo').textContent, /Unknown/);
+});
+
+test('the annotation dialog saves a series from existing suggestions and clears it', async () => {
+  await click(buttonIn(rowFor('demo'), 'Tag'));
+  const dialog = container.querySelector('.deck-modal');
+  const inputs = [...dialog.querySelectorAll('input')];
+  assert.equal(inputs.length, 3, 'the dialog exposes a series field');
+  assert.equal(inputs[2].value, '', 'demo is unassigned');
+  const seriesList = dialog.querySelector('#' + inputs[2].getAttribute('list'));
+  assert.ok(seriesList, 'the series field is backed by a suggestion list');
+  const seriesSuggestions = [...seriesList.querySelectorAll('option')].map((option) => option.value);
+  assert.deepEqual(seriesSuggestions, ['Docs', 'Reviewers'], 'existing series spellings are suggested');
+
+  await act(async () => {
+    setValue(inputs[2], 'Docs');
+  });
+  await settle();
+  calls.length = 0;
+  await click(buttonByText('Save tags'));
+  assert.deepEqual(calls.find((call) => call.path === '/dsh-skill-deck/annotate')?.body, {
+    name: 'demo',
+    category: '',
+    author: '',
+    series: 'Docs',
+  });
+
+  await click(buttonIn(rowFor('demo'), 'Tag'));
+  const reopened = [...container.querySelectorAll('.deck-modal input')];
+  assert.equal(reopened[2].value, 'Docs', 'the saved series is pre-filled');
+  await act(async () => {
+    setValue(reopened[2], '');
+  });
+  await settle();
+  calls.length = 0;
+  await click(buttonByText('Save tags'));
+  assert.deepEqual(calls.find((call) => call.path === '/dsh-skill-deck/annotate')?.body, {
+    name: 'demo',
+    category: '',
+    author: '',
+    series: '',
+  });
 });
 
 test('the Cards view groups skills by category with counts and a last fallback group', async () => {
@@ -673,6 +749,7 @@ test('card toggles and actions use the existing routes and confirmation', async 
     name: 'demo',
     category: 'review',
     author: 'Dex Horthy',
+    series: '',
   });
   const reviewGroup = groupSummaries().find((group) => group.title === 'review');
   assert.deepEqual(reviewGroup, { title: 'review', count: '2', cards: ['demo', 'review-skill'] });
@@ -705,6 +782,7 @@ test('the annotation editor pre-fills manual values only and hints at the frontm
   assert.equal(inputs[0].value, 'documentation', 'the manual category is pre-filled');
   assert.equal(inputs[1].value, '', 'a frontmatter-only author is not pinned as a manual value');
   assert.equal(inputs[1].placeholder, 'Docs Writer', 'the frontmatter author is shown as a hint');
+  assert.equal(inputs[2].value, 'Docs', 'the manual series is pre-filled');
 
   calls.length = 0;
   await click(buttonByText('Save tags'));
@@ -712,12 +790,14 @@ test('the annotation editor pre-fills manual values only and hints at the frontm
     name: 'docs-skill',
     category: 'documentation',
     author: '',
+    series: 'Docs',
   });
 
   await click(buttonIn(cardFor('docs-skill'), 'Tag'));
   inputs = [...container.querySelectorAll('.deck-modal input')];
   assert.equal(inputs[1].value, '', 'saving a category-only edit leaves the author manual value empty');
   assert.equal(inputs[1].placeholder, 'Docs Writer', 'the frontmatter fallback still applies');
+  assert.equal(inputs[2].value, 'Docs', 'saving a category-only edit leaves the series manual value intact');
   await click(buttonByText('Cancel'));
 
   await click(buttonByText('List'));
@@ -814,7 +894,7 @@ test('the view and grouping survive a remount', async () => {
   await click(buttonByText('Cards'));
 });
 
-test('the Map view renders grouped equal-area tiles with name, badges, size and full titles', async () => {
+test('the Map always groups by series, hides the group-by selector, and shows module headers', async () => {
   profile = JSON.parse(JSON.stringify(baseProfile));
   calls.length = 0;
   await click(buttonByText('Refresh'));
@@ -827,95 +907,206 @@ test('the Map view renders grouped equal-area tiles with name, badges, size and 
   assert.equal(buttonByText('Cards')?.getAttribute('aria-pressed'), 'false');
   assert.equal(container.querySelectorAll('.deck-row').length, 0, 'list is replaced by the map');
   assert.equal(container.querySelectorAll('.deck-card').length, 0, 'cards are replaced by the map');
-  assert.ok(container.querySelector('.deck-map-grid'), 'responsive grid rendered');
-  assert.equal(container.querySelector('.deck-map-canvas'), null, 'the treemap canvas is gone');
+  assert.ok(!container.querySelector('.deck-map-canvas'), 'the treemap canvas is gone');
+  assert.ok(
+    container.querySelector('select.deck-groupby') === null,
+    'the group-by selector is hidden on the Map',
+  );
+  assert.equal(container.querySelectorAll('.deck-map-grid').length, 3, 'every module has its own grid');
 
   const css = document.querySelector('style[data-plugin-css="dsh-skill-deck/panel.css"]')?.textContent ?? '';
   assert.match(css, /grid-template-columns:\s*repeat\(auto-fill, minmax\(150px, 1fr\)\)/);
   assert.match(css, /\.deck-map-grid\s*\{[^}]*gap:\s*8px/);
   assert.match(css, /\.deck-map-tile\s*\{[^}]*aspect-ratio:\s*3\s*\/\s*2/);
+  assert.match(css, /\.deck-map-module\s*\{[^}]*border:/, 'each series is a module card');
 
-  assert.deepEqual(mapSections(), [
-    { title: 'documentation', count: '2', tiles: ['docs-skill', 'lint-skill'] },
-    { title: 'review', count: '1', tiles: ['review-skill'] },
-    { title: 'Uncategorized', count: '1', tiles: ['demo'] },
+  assert.deepEqual(mapModules(), [
+    {
+      title: 'Docs',
+      count: '2',
+      status: '2 Enabled',
+      tiles: ['docs-skill', 'lint-skill'],
+      unassigned: false,
+      empty: false,
+    },
+    {
+      title: 'Reviewers',
+      count: '1',
+      status: '1 Needs fixing',
+      tiles: ['review-skill'],
+      unassigned: false,
+      empty: false,
+    },
+    {
+      title: 'Unassigned',
+      count: '1',
+      status: '1 Enabled',
+      tiles: ['demo'],
+      unassigned: true,
+      empty: false,
+    },
   ]);
 
-  const tiles = mapTiles();
-  assert.equal(tiles.length, 4);
-  for (const tile of tiles) {
-    assert.equal(tile.tagName, 'BUTTON', 'every tile is a button');
-    assert.ok(tile.classList.contains('deck-map-tile'));
-    assert.equal(tile.style.width, '', 'tiles get their size from the grid, not inline geometry');
-    assert.equal(tile.style.height, '');
-    assert.equal(tile.style.left, '');
-    assert.equal(tile.style.top, '');
-    assert.equal(tile.getAttribute('title'), tile.dataset.skill, 'the full name is a native hover title');
-    assert.match(tile.getAttribute('aria-label') || '', new RegExp(tile.dataset.skill));
-    assert.match(tile.getAttribute('aria-label') || '', /\d+ B/);
-  }
-
-  const demoTile = mapTileFor('demo');
-  assert.match(demoTile.textContent, /demo/);
-  assert.match(demoTile.textContent, /Model/);
-  assert.match(demoTile.textContent, /Slash/);
-  assert.match(demoTile.textContent, /64 B/);
-  const docsTile = mapTileFor('docs-skill');
-  assert.match(docsTile.textContent, /Model/);
-  const docsSlash = [...docsTile.querySelectorAll('.deck-badge')].find(
-    (badge) => badge.textContent === 'Slash',
-  );
-  assert.ok(docsSlash, 'both surface badges are always shown');
-  assert.ok(docsSlash.classList.contains('muted'), 'the inactive surface is muted');
-  assert.match(docsTile.textContent, /128 B/);
-  assert.match(mapTileFor('review-skill').textContent, /Needs fixing/, 'the invalid marker stays on the tile');
-
-  assert.deepEqual(statusLegend(), [
-    ['Needs fixing', '1'],
-    ['Disabled', '0'],
-    ['Enabled', '3'],
-  ]);
+  await click(buttonByText('Cards'));
+  const groupBy = container.querySelector('select.deck-groupby');
+  assert.ok(groupBy, 'the Cards view restores the group-by selector');
+  assert.equal(groupBy.value, 'category', 'the Cards grouping preference is preserved');
+  await pick(groupBy, 'author');
+  await click(buttonByText('Map'));
+  assert.ok(container.querySelector('select.deck-groupby') === null);
+  assert.deepEqual(mapModules().map((module) => module.title), ['Docs', 'Reviewers', 'Unassigned']);
+  await click(buttonByText('Cards'));
+  assert.equal(container.querySelector('select.deck-groupby').value, 'author');
+  await pick(container.querySelector('select.deck-groupby'), 'category');
+  await click(buttonByText('Map'));
 });
 
-test('map sections order by count then name, keep fallbacks last, and sort tiles by name', async () => {
+test('series modules order by count then name, unassigned stays last, and tiles sort by name', async () => {
   profile = {
     ...JSON.parse(JSON.stringify(baseProfile)),
     skills: [
-      { ...baseProfile.skills[1], name: 'zeta-skill', category: 'shared', manualCategory: 'shared' },
-      { ...baseProfile.skills[1], name: 'alpha-skill', category: 'shared', manualCategory: 'shared' },
-      { ...baseProfile.skills[1], name: 'solo-skill', category: 'alpha-cat', manualCategory: 'alpha-cat' },
-      { ...baseProfile.skills[0], name: 'loose-skill', category: 'Uncategorized', manualCategory: '' },
+      {
+        ...baseProfile.skills[1],
+        name: 'zeta-skill',
+        category: 'shared',
+        manualCategory: 'shared',
+        series: 'Shared',
+        manualSeries: 'Shared',
+      },
+      {
+        ...baseProfile.skills[1],
+        name: 'alpha-skill',
+        category: 'shared',
+        manualCategory: 'shared',
+        series: 'shared',
+        manualSeries: 'shared',
+      },
+      {
+        ...baseProfile.skills[1],
+        name: 'solo-skill',
+        category: 'alpha-cat',
+        manualCategory: 'alpha-cat',
+        series: 'alpha-cat',
+        manualSeries: 'alpha-cat',
+      },
+      {
+        ...baseProfile.skills[1],
+        name: 'beta-skill',
+        category: 'Beta',
+        manualCategory: 'Beta',
+        series: 'Beta',
+        manualSeries: 'Beta',
+      },
+      {
+        ...baseProfile.skills[0],
+        name: 'loose-skill',
+        category: 'Uncategorized',
+        manualCategory: '',
+        series: '',
+        manualSeries: '',
+      },
     ],
-    totals: { ...baseProfile.totals, skills: 4 },
+    totals: { ...baseProfile.totals, skills: 5 },
   };
   await click(buttonByText('Refresh'));
-  assert.deepEqual(mapSections(), [
-    { title: 'shared', count: '2', tiles: ['alpha-skill', 'zeta-skill'] },
-    { title: 'alpha-cat', count: '1', tiles: ['solo-skill'] },
-    { title: 'Uncategorized', count: '1', tiles: ['loose-skill'] },
-  ]);
+  assert.deepEqual(
+    mapModules().map((module) => [module.title, module.count, module.tiles]),
+    [
+      ['Shared', '2', ['alpha-skill', 'zeta-skill']],
+      ['alpha-cat', '1', ['solo-skill']],
+      ['Beta', '1', ['beta-skill']],
+      ['Unassigned', '1', ['loose-skill']],
+    ],
+    'series compare case-insensitively but display the first spelling seen',
+  );
+  assert.deepEqual(
+    mapModules().map((module) => module.unassigned),
+    [false, false, false, true],
+    'the unassigned module renders last',
+  );
 
   profile = JSON.parse(JSON.stringify(baseProfile));
   await click(buttonByText('Refresh'));
-  const groupBy = container.querySelector('select.deck-groupby');
-  await pick(groupBy, 'author');
   assert.deepEqual(
-    mapSections().map((section) => [section.title, section.count]),
+    mapModules().map((module) => module.title),
+    ['Docs', 'Reviewers', 'Unassigned'],
+  );
+});
+
+test('the unassigned module appears last and collapses to a slim drop zone when empty', async () => {
+  const assigned = JSON.parse(JSON.stringify(baseProfile));
+  assigned.skills = assigned.skills.map((skill) =>
+    skill.name === 'demo'
+      ? { ...skill, series: 'Loose Ends', manualSeries: 'Loose Ends' }
+      : skill,
+  );
+  profile = assigned;
+  await click(buttonByText('Refresh'));
+
+  const modules = mapModules();
+  assert.deepEqual(
+    modules.map((module) => [module.title, module.count, module.unassigned, module.empty]),
     [
-      ['Docs Writer', '2'],
-      ['Dex Horthy', '1'],
-      ['Unknown', '1'],
+      ['Docs', '2', false, false],
+      ['Loose Ends', '1', false, false],
+      ['Reviewers', '1', false, false],
+      ['Unassigned', '0', true, true],
     ],
   );
-  await pick(groupBy, 'root');
+  const empty = mapModuleFor('Unassigned');
+  assert.ok(empty, 'the unassigned module still renders when empty');
+  assert.ok(empty.classList.contains('is-empty'));
+  assert.equal(empty.querySelectorAll('.deck-map-tile').length, 0, 'the empty module has no tiles');
+  assert.ok(empty.querySelector('.deck-map-grid') === null, 'the empty module collapses its grid');
+  assert.match(empty.querySelector('.deck-map-dropzone')?.textContent ?? '', /Drag a skill here/);
+  assert.equal(buttonInScope(empty, 'Rename'), undefined, 'Unassigned is not a renameable series');
+
+  profile = JSON.parse(JSON.stringify(baseProfile));
+  await click(buttonByText('Refresh'));
+  assert.equal(mapModuleFor('Unassigned').classList.contains('is-empty'), false);
+});
+
+test('renaming a series from its module header updates every member in one request', async () => {
+  profile = JSON.parse(JSON.stringify(baseProfile));
+  await click(buttonByText('Refresh'));
+
+  const docsModule = mapModuleFor('Docs');
+  assert.ok(docsModule, 'the Docs module rendered');
+  calls.length = 0;
+  await click(buttonInScope(docsModule, 'Rename'));
+
+  const dialog = container.querySelector('.deck-modal');
+  assert.ok(dialog, 'module rename is an ordinary dialog');
+  assert.match(dialog.textContent, /Rename series/);
+  const input = dialog.querySelector('input');
+  assert.equal(input.value, 'Docs', 'the current series name is pre-filled');
+  await act(async () => {
+    setValue(input, 'Documentation');
+  });
+  await settle();
+  await click(buttonInScope(dialog, 'Rename'));
+
+  const annotates = calls.filter((call) => call.path === '/dsh-skill-deck/annotate');
+  assert.equal(annotates.length, 1, 'the whole series is renamed in one request');
+  assert.deepEqual(annotates[0]?.body, {
+    name: 'docs-skill',
+    previousSeries: 'Docs',
+    series: 'Documentation',
+  });
+  assert.equal(container.querySelector('.deck-modal'), null, 'the dialog closes');
+  assert.match(container.textContent, /Series renamed/);
   assert.deepEqual(
-    mapSections().map((section) => [section.title, section.count]),
+    mapModules().map((module) => [module.title, module.count, module.tiles]),
     [
-      ['~/.agents/skills', '2'],
-      ['~/.dsh/skills', '2'],
+      ['Documentation', '2', ['docs-skill', 'lint-skill']],
+      ['Reviewers', '1', ['review-skill']],
+      ['Unassigned', '1', ['demo']],
     ],
+    'every member moved to the new series name',
   );
-  await pick(groupBy, 'category');
+
+  profile = JSON.parse(JSON.stringify(baseProfile));
+  await click(buttonByText('Refresh'));
 });
 
 test('map tiles encode invalid > disabled > enabled status with tints, dots and visible counts', async () => {
@@ -927,6 +1118,8 @@ test('map tiles encode invalid > disabled > enabled status with tints, dots and 
         name: 'broken-disabled',
         category: 'status',
         manualCategory: 'status',
+        series: 'status',
+        manualSeries: 'status',
         valid: false,
         error: 'bad frontmatter',
         modelInvocable: false,
@@ -937,6 +1130,8 @@ test('map tiles encode invalid > disabled > enabled status with tints, dots and 
         name: 'broken-enabled',
         category: 'status',
         manualCategory: 'status',
+        series: 'status',
+        manualSeries: 'status',
         valid: false,
         error: 'bad frontmatter',
         modelInvocable: true,
@@ -947,6 +1142,8 @@ test('map tiles encode invalid > disabled > enabled status with tints, dots and 
         name: 'off-skill',
         category: 'status',
         manualCategory: 'status',
+        series: 'status',
+        manualSeries: 'status',
         valid: true,
         error: null,
         modelInvocable: false,
@@ -957,6 +1154,8 @@ test('map tiles encode invalid > disabled > enabled status with tints, dots and 
         name: 'on-skill',
         category: 'status',
         manualCategory: 'status',
+        series: 'status',
+        manualSeries: 'status',
         valid: true,
         error: null,
         modelInvocable: true,
@@ -1012,13 +1211,17 @@ test('map tiles encode invalid > disabled > enabled status with tints, dots and 
   await click(buttonByText('Refresh'));
 });
 
-test('search and the status filter narrow map sections and the legend before grouping', async () => {
+test('search and the status filter narrow series modules and the legend before grouping', async () => {
   const search = container.querySelector('input[type="search"]');
   await act(async () => {
     setValue(search, 'demo');
   });
   await settle();
-  assert.deepEqual(mapSections(), [{ title: 'Uncategorized', count: '1', tiles: ['demo'] }]);
+  assert.deepEqual(
+    mapModules().map((module) => [module.title, module.count, module.tiles]),
+    [['Unassigned', '1', ['demo']]],
+    'the matching unassigned module is the only populated module',
+  );
   assert.deepEqual(statusLegend(), [
     ['Needs fixing', '0'],
     ['Disabled', '0'],
@@ -1031,7 +1234,14 @@ test('search and the status filter narrow map sections and the legend before gro
   await settle();
 
   await pick(container.querySelector('select.deck-filter'), 'invalid');
-  assert.deepEqual(mapSections(), [{ title: 'review', count: '1', tiles: ['review-skill'] }]);
+  assert.deepEqual(
+    mapModules().map((module) => [module.title, module.count, module.tiles, module.empty]),
+    [
+      ['Reviewers', '1', ['review-skill'], false],
+      ['Unassigned', '0', [], true],
+    ],
+    'the empty unassigned drop zone remains while the visible module shrinks',
+  );
   assert.deepEqual(statusLegend(), [
     ['Needs fixing', '1'],
     ['Disabled', '0'],
@@ -1048,10 +1258,42 @@ test('search and the status filter narrow map sections and the legend before gro
 
 test('a desktop tile click opens the editor and the map exposes no destructive actions', async () => {
   const tiles = mapTiles();
+  assert.equal(tiles.length, 4);
+  for (const tile of tiles) {
+    assert.equal(tile.tagName, 'BUTTON', 'every tile is a button');
+    assert.ok(tile.classList.contains('deck-map-tile'));
+    assert.equal(tile.style.width, '', 'tiles get their size from the grid, not inline geometry');
+    assert.equal(tile.style.height, '');
+    assert.equal(tile.style.left, '');
+    assert.equal(tile.style.top, '');
+    assert.equal(tile.getAttribute('title'), tile.dataset.skill, 'the full name is a native hover title');
+    assert.match(tile.getAttribute('aria-label') || '', new RegExp(tile.dataset.skill));
+    assert.match(tile.getAttribute('aria-label') || '', /\d+ B/);
+  }
+  const demoTile = mapTileFor('demo');
+  assert.match(demoTile.textContent, /demo/);
+  assert.match(demoTile.textContent, /Model/);
+  assert.match(demoTile.textContent, /Slash/);
+  assert.match(demoTile.textContent, /64 B/);
+  const docsSlash = [...mapTileFor('docs-skill').querySelectorAll('.deck-badge')].find(
+    (badge) => badge.textContent === 'Slash',
+  );
+  assert.ok(docsSlash, 'both surface badges are always shown');
+  assert.ok(docsSlash.classList.contains('muted'), 'the inactive surface is muted');
+  assert.match(mapTileFor('docs-skill').textContent, /128 B/);
+  assert.match(mapTileFor('review-skill').textContent, /Needs fixing/, 'the invalid marker stays on the tile');
+
+  const mapButtons = [...container.querySelectorAll('.deck-map button')];
+  for (const button of mapButtons) {
+    assert.ok(
+      button.classList.contains('deck-map-tile') || button.classList.contains('deck-map-rename'),
+      'the Map only exposes tiles and series rename actions: ' + button.textContent,
+    );
+  }
   assert.equal(
-    container.querySelectorAll('.deck-map button').length,
-    tiles.length,
-    'only the tiles are buttons on desktop',
+    container.querySelectorAll('.deck-map-module .deck-map-rename').length,
+    2,
+    'each named series module has one rename action',
   );
   assert.equal(container.querySelector('.deck-map .deck-btn.danger'), null, 'no destructive control');
   assert.equal(container.querySelector('.deck-map-strip'), null, 'no details strip on desktop');
@@ -1091,6 +1333,7 @@ test('the map overlay shows measured details on hover and focus, flipping and cl
     assert.match(popover.textContent, /~\/\.dsh\/skills/);
     assert.match(popover.textContent, /Category · Uncategorized/);
     assert.match(popover.textContent, /Author · Unknown/);
+    assert.match(popover.textContent, /Series · Unassigned/);
 
     await unhover(mapTileFor('demo'));
     assert.equal(container.querySelector('.deck-map-popover'), null, 'leaving hides the overlay');
@@ -1101,6 +1344,7 @@ test('the map overlay shows measured details on hover and focus, flipping and cl
     assert.equal(popover.style.left, '756px', 'clamped to the right viewport edge');
     assert.equal(popover.style.top, '208px');
     assert.match(popover.textContent, /128 B/);
+    assert.match(popover.textContent, /Series · Docs/);
     await blurActive();
     assert.equal(container.querySelector('.deck-map-popover'), null, 'blur hides the overlay');
 
@@ -1145,6 +1389,7 @@ test('narrow or touch layouts select on the first tap and open on Edit or a seco
     assert.match(otherContainer.querySelector('.deck-map-strip').textContent, /demo/);
     assert.match(otherContainer.querySelector('.deck-map-strip').textContent, /A demo skill\./);
     assert.match(otherContainer.querySelector('.deck-map-strip').textContent, /1 files · 64 B/);
+    assert.match(otherContainer.querySelector('.deck-map-strip').textContent, /Series · Unassigned/);
     assert.ok(
       !calls.some((call) => call.path === '/dsh-skill-deck/read'),
       'the first tap does not read the file',
@@ -1213,8 +1458,10 @@ test('the Map view keeps the empty state when the deck has no skills', async () 
   assert.equal(mapTiles().length, 4);
 });
 
-test('the Map view and grouping survive a remount', async () => {
+test('the Map view and the Cards grouping survive a remount', async () => {
+  await click(buttonByText('Cards'));
   await pick(container.querySelector('select.deck-groupby'), 'author');
+  await click(buttonByText('Map'));
 
   const otherContainer = document.createElement('div');
   document.body.appendChild(otherContainer);
@@ -1226,20 +1473,39 @@ test('the Map view and grouping survive a remount', async () => {
   await settle();
   assert.ok(otherContainer.querySelector('.deck-map'), 'map view restored');
   assert.equal(otherContainer.querySelectorAll('.deck-map-tile').length, 4);
-  assert.equal(otherContainer.querySelector('select.deck-groupby').value, 'author');
+  assert.ok(
+    otherContainer.querySelector('select.deck-groupby') === null,
+    'the Map restores without a group-by selector',
+  );
   assert.deepEqual(
-    [...otherContainer.querySelectorAll('.deck-group-title')].map((node) => node.textContent.trim()),
-    ['Docs Writer', 'Dex Horthy', 'Unknown'],
+    mapModules(otherContainer).map((module) => [module.title, module.count]),
+    [
+      ['Docs', '2'],
+      ['Reviewers', '1'],
+      ['Unassigned', '1'],
+    ],
   );
   assert.deepEqual(
     [...otherContainer.querySelectorAll('.deck-legend-label')].map((node) => node.textContent.trim()),
     ['Needs fixing', 'Disabled', 'Enabled'],
   );
+
+  await click(buttonInScope(otherContainer, 'Cards'));
+  assert.equal(otherContainer.querySelector('select.deck-groupby').value, 'author');
+  assert.deepEqual(
+    [...otherContainer.querySelectorAll('.deck-group-title')].map((node) => node.textContent.trim()),
+    ['Docs Writer', 'Dex Horthy', 'Unknown'],
+    'the Cards grouping preference is still intact',
+  );
   await act(async () => {
     otherRoot.unmount();
   });
   otherContainer.remove();
+
+  await click(buttonByText('Cards'));
+  assert.equal(container.querySelector('select.deck-groupby').value, 'author');
   await pick(container.querySelector('select.deck-groupby'), 'category');
+  await click(buttonByText('Map'));
 });
 
 test('the Map view keeps loading and error states usable', async () => {

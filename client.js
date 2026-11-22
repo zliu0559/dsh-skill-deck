@@ -94,14 +94,18 @@ window.__ModuleLoader__.load({
       tag: '标签',
       categoryLabel: '分类',
       authorLabel: '作者',
+      seriesLabel: '系列',
       uncategorized: '未分类',
       unknownAuthor: '未知作者',
       unknownRoot: '未知来源',
-      annotationTitle: '分类与作者',
+      unassigned: '未分组',
+      annotationTitle: '分类、作者与系列',
       annotationCategory: '分类',
       annotationCategoryHint: '可以从已有分类里选，也可以输入新的；留空表示未分类。',
       annotationAuthor: '作者',
       annotationAuthorHint: '留空会使用 SKILL.md 里的作者，没有则显示未知作者。',
+      annotationSeries: '系列',
+      annotationSeriesHint: '可以从已有系列里选，也可以输入新的；留空表示未分组。',
       annotationHint: '标注保存在插件自己的文件里，不会改动 SKILL.md。',
       annotationAction: '保存标注',
       annotationSaving: '保存中…',
@@ -119,6 +123,13 @@ window.__ModuleLoader__.load({
       groupByAuthor: '作者',
       groupByRoot: '来源',
       filterLabel: '状态',
+      renameSeries: '重命名',
+      renameSeriesTitle: '重命名系列',
+      renameSeriesAction: '重命名',
+      renameSeriesHint: '这个系列里的每个技能都会在同一次请求里更新。',
+      renaming: '重命名中…',
+      seriesRenamed: '系列已重命名',
+      unassignedHint: '把技能拖到这里可以移出系列。',
     };
 
     const en = {
@@ -195,14 +206,18 @@ window.__ModuleLoader__.load({
       tag: 'Tag',
       categoryLabel: 'Category',
       authorLabel: 'Author',
+      seriesLabel: 'Series',
       uncategorized: 'Uncategorized',
       unknownAuthor: 'Unknown',
       unknownRoot: 'Unknown root',
-      annotationTitle: 'Category and author',
+      unassigned: 'Unassigned',
+      annotationTitle: 'Category, author and series',
       annotationCategory: 'Category',
       annotationCategoryHint: 'Pick an existing category or type a new one; leave it empty for Uncategorized.',
       annotationAuthor: 'Author',
       annotationAuthorHint: 'Leave it empty to use the SKILL.md author, or Unknown when there is none.',
+      annotationSeries: 'Series',
+      annotationSeriesHint: 'Pick an existing series or type a new one; leave it empty for Unassigned.',
       annotationHint: 'Annotations live in a plugin-owned file; SKILL.md is never changed.',
       annotationAction: 'Save tags',
       annotationSaving: 'Saving…',
@@ -220,6 +235,13 @@ window.__ModuleLoader__.load({
       groupByAuthor: 'Author',
       groupByRoot: 'Root',
       filterLabel: 'Status',
+      renameSeries: 'Rename',
+      renameSeriesTitle: 'Rename series',
+      renameSeriesAction: 'Rename',
+      renameSeriesHint: 'Every skill in this series is updated in one request.',
+      renaming: 'Renaming…',
+      seriesRenamed: 'Series renamed',
+      unassignedHint: 'Drag a skill here to remove it from its series.',
     };
 
     const language = (navigator.language || 'en').toLowerCase();
@@ -260,7 +282,14 @@ window.__ModuleLoader__.load({
       .deck-card-actions { display: flex; gap: 6px; flex-wrap: wrap; }
       .deck-card-actions .deck-btn { height: 24px; padding: 0 8px; font-size: 11px; }
       .deck-map { display: flex; flex-direction: column; gap: 14px; }
-      .deck-map-section { display: flex; flex-direction: column; gap: 8px; }
+      .deck-map-module { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.22)); border-radius: var(--dsw-radius-lg, 10px); }
+      .deck-map-module.is-empty { padding: 8px 12px; }
+      .deck-map-module-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      .deck-map-module-title { margin: 0; font-size: 13px; font-weight: 600; }
+      .deck-map-module-count { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 18px; padding: 0 6px; border-radius: 999px; background: rgba(127,127,127,.16); font-size: 10px; font-weight: 600; }
+      .deck-map-module-status { font-size: 11px; color: var(--dsw-alias-label-secondary, inherit); }
+      .deck-map-rename { margin-left: auto; height: 24px; padding: 0 9px; font-size: 11px; }
+      .deck-map-dropzone { padding: 8px 10px; border: 1px dashed var(--dsw-alias-border-l2, rgba(127,127,127,.3)); border-radius: var(--dsw-radius-md, 8px); font-size: 11px; color: var(--dsw-alias-label-tertiary, inherit); }
       .deck-map-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; align-items: stretch; }
       .deck-map-tile { position: relative; display: flex; flex-direction: column; gap: 6px; box-sizing: border-box; width: 100%; aspect-ratio: 3 / 2; margin: 0; padding: 10px 11px; border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.22)); border-radius: var(--dsw-radius-lg, 10px); color: inherit; font: inherit; text-align: left; cursor: pointer; overflow: hidden; }
       .deck-map-tile:hover { border-color: var(--dsw-alias-border-l1, rgba(127,127,127,.45)); filter: brightness(.98); }
@@ -396,6 +425,10 @@ window.__ModuleLoader__.load({
       return !value || value.toLowerCase() === UNKNOWN_AUTHOR.toLowerCase() ? t('unknownAuthor') : value;
     }
 
+    function displaySeries(value) {
+      return !value ? t('unassigned') : value;
+    }
+
     function readPreference(key, allowed, fallback) {
       try {
         const value = window.localStorage.getItem(key);
@@ -440,8 +473,15 @@ window.__ModuleLoader__.load({
         fallback: (value) => value === '',
         fallbackLabel: () => t('unknownRoot'),
       },
+      series: {
+        labelKey: 'seriesLabel',
+        value: (skill) => skill.series,
+        fallback: (value) => value === '',
+        fallbackLabel: () => t('unassigned'),
+      },
     };
-    const GROUPINGS = Object.keys(GROUP_AXES);
+    // The Map always groups by series; only Cards exposes a grouping choice.
+    const GROUPINGS = ['category', 'author', 'root'];
 
     function groupLabelFor(axis, value, fallback, rootLabels) {
       if (fallback) return axis.fallbackLabel();
@@ -506,6 +546,15 @@ window.__ModuleLoader__.load({
       if (!skill.valid) return 'invalid';
       if (!skill.modelInvocable && !skill.userInvocable) return 'disabled';
       return 'enabled';
+    }
+
+    /** One line per module, listing only the statuses present in that series. */
+    function moduleStatusSummary(skills) {
+      const counts = { invalid: 0, disabled: 0, enabled: 0 };
+      for (const skill of skills) counts[mapStatus(skill)] += 1;
+      return MAP_STATUS_ORDER.filter((status) => counts[status] > 0)
+        .map((status) => counts[status] + ' ' + t(MAP_STATUS_LABEL[status]))
+        .join(' · ');
     }
 
     function bySkillName(a, b) {
@@ -576,6 +625,7 @@ window.__ModuleLoader__.load({
         rootLabelFor(skill, rootLabels),
         t('categoryLabel') + ' · ' + displayCategory(skill.category),
         t('authorLabel') + ' · ' + displayAuthor(skill.author),
+        t('seriesLabel') + ' · ' + displaySeries(skill.series),
       ];
     }
 
@@ -585,7 +635,7 @@ window.__ModuleLoader__.load({
      * compact layout replaces it with a sticky details strip.
      */
     function SkillMap(props) {
-      const { groups, busy, onEdit, rootLabels } = props;
+      const { groups, busy, onEdit, rootLabels, onRenameSeries } = props;
       const compact = useCompactMap();
       const [hovered, setHovered] = useState(null);
       const [focused, setFocused] = useState(null);
@@ -596,6 +646,21 @@ window.__ModuleLoader__.load({
 
       const skills = useMemo(() => groups.flatMap((group) => group.skills), [groups]);
       const byName = useMemo(() => new Map(skills.map((skill) => [skill.name, skill])), [skills]);
+      // The unassigned bucket is a permanent drop target, so it renders last
+      // even when no visible skill belongs to it.
+      const modules = useMemo(() => {
+        const list = groups.slice();
+        if (!list.some((group) => group.fallback)) {
+          list.push({
+            key: '\u0000fallback',
+            label: t('unassigned'),
+            fallback: true,
+            count: 0,
+            skills: [],
+          });
+        }
+        return list;
+      }, [groups]);
       const activeName = compact ? null : (hovered ?? focused);
       const activeSkill = activeName ? byName.get(activeName) ?? null : null;
       const selectedSkill = compact && selected ? byName.get(selected) ?? null : null;
@@ -757,18 +822,52 @@ window.__ModuleLoader__.load({
       return h(
         'div',
         { className: 'deck-map', role: 'group', 'aria-label': t('mapLabel') },
-        groups.map((group) =>
-          h(
+        modules.map((group) => {
+          const empty = group.count === 0;
+          return h(
             'section',
-            { key: group.key, className: 'deck-map-section', 'data-group': group.key },
-            h(GroupHead, { group }),
+            {
+              key: group.key,
+              className:
+                'deck-map-module' +
+                (group.fallback ? ' unassigned' : '') +
+                (empty ? ' is-empty' : ''),
+              'data-series': group.key,
+              'data-unassigned': group.fallback ? 'true' : 'false',
+            },
             h(
               'div',
-              { className: 'deck-map-grid' },
-              [...group.skills].sort(bySkillName).map(renderTile),
+              { className: 'deck-map-module-head' },
+              h('h4', { className: 'deck-map-module-title' }, group.label),
+              h('span', { className: 'deck-map-module-count' }, String(group.count)),
+              empty
+                ? null
+                : h(
+                    'span',
+                    { className: 'deck-map-module-status' },
+                    moduleStatusSummary(group.skills),
+                  ),
+              group.fallback
+                ? null
+                : h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'deck-btn deck-map-rename',
+                      onClick: () => onRenameSeries && onRenameSeries(group),
+                    },
+                    t('renameSeries'),
+                  ),
             ),
-          ),
-        ),
+            empty
+              ? h('div', { className: 'deck-map-dropzone' }, t('unassignedHint'))
+              : h(
+                  'div',
+                  { className: 'deck-map-grid' },
+                  [...group.skills].sort(bySkillName).map(renderTile),
+                ),
+          );
+        }),
         h(
           'div',
           { className: 'deck-map-legend', role: 'list', 'aria-label': t('mapStatusLegend') },
@@ -1178,8 +1277,19 @@ window.__ModuleLoader__.load({
     }
 
     function AnnotationDialog(props) {
-      const { skill, form, suggestions, busy, error, onChange, onSubmit, onClose } = props;
+      const {
+        skill,
+        form,
+        suggestions,
+        seriesSuggestions,
+        busy,
+        error,
+        onChange,
+        onSubmit,
+        onClose,
+      } = props;
       const listId = NS + '-category-suggestions';
+      const seriesListId = NS + '-series-suggestions';
       // Only a skill without a manual author gets a fallback placeholder; once
       // the user has pinned one, the field carries that value instead.
       const authorFallback =
@@ -1223,6 +1333,25 @@ window.__ModuleLoader__.load({
             }),
             h('span', { className: 'deck-note' }, t('annotationAuthorHint')),
           ),
+          h(
+            'label',
+            { className: 'deck-field' },
+            h('span', { className: 'deck-field-label' }, t('annotationSeries')),
+            h('input', {
+              className: 'deck-input',
+              value: form.series,
+              list: seriesListId,
+              spellCheck: false,
+              'aria-label': t('annotationSeries'),
+              onChange: (event) => onChange('series', event.target.value),
+            }),
+            h(
+              'datalist',
+              { id: seriesListId },
+              (seriesSuggestions || []).map((value) => h('option', { key: value, value })),
+            ),
+            h('span', { className: 'deck-note' }, t('annotationSeriesHint')),
+          ),
           h('p', { className: 'deck-note' }, t('annotationHint')),
           error ? h('p', { className: 'deck-error' }, error) : null,
         ),
@@ -1238,6 +1367,54 @@ window.__ModuleLoader__.load({
               'button',
               { className: 'deck-btn primary', disabled: busy, onClick: onSubmit },
               busy ? t('annotationSaving') : t('annotationAction'),
+            ),
+          ),
+        ),
+      );
+    }
+
+    function RenameSeriesDialog(props) {
+      const { from, value, busy, error, onChange, onSubmit, onClose } = props;
+      return h(
+        Modal,
+        { title: t('renameSeriesTitle') + ' · ' + from, onClose },
+        h(
+          'div',
+          { className: 'deck-modal-body' },
+          h(
+            'label',
+            { className: 'deck-field' },
+            h('span', { className: 'deck-field-label' }, t('annotationSeries')),
+            h('input', {
+              className: 'deck-input',
+              value,
+              spellCheck: false,
+              'aria-label': t('annotationSeries'),
+              onChange: (event) => onChange(event.target.value),
+              onKeyDown: (event) => {
+                if (event.key === 'Enter' && value.trim() !== '' && !busy) onSubmit();
+              },
+            }),
+            h('span', { className: 'deck-note' }, t('renameSeriesHint')),
+          ),
+          error ? h('p', { className: 'deck-error' }, error) : null,
+        ),
+        h(
+          'div',
+          { className: 'deck-modal-foot' },
+          h('span', { className: 'deck-note' }, from),
+          h(
+            'div',
+            { style: { display: 'flex', gap: 8 } },
+            h('button', { className: 'deck-btn', onClick: onClose }, t('cancel')),
+            h(
+              'button',
+              {
+                className: 'deck-btn primary',
+                disabled: busy || value.trim() === '',
+                onClick: onSubmit,
+              },
+              busy ? t('renaming') : t('renameSeriesAction'),
             ),
           ),
         ),
@@ -1275,9 +1452,13 @@ window.__ModuleLoader__.load({
       const [dupError, setDupError] = useState('');
       const [dupBusy, setDupBusy] = useState(false);
       const [annotating, setAnnotating] = useState(null);
-      const [annotationForm, setAnnotationForm] = useState({ category: '', author: '' });
+      const [annotationForm, setAnnotationForm] = useState({ category: '', author: '', series: '' });
       const [annotationError, setAnnotationError] = useState('');
       const [annotationBusy, setAnnotationBusy] = useState(false);
+      const [renaming, setRenaming] = useState(null);
+      const [renameValue, setRenameValue] = useState('');
+      const [renameError, setRenameError] = useState('');
+      const [renameBusy, setRenameBusy] = useState(false);
       const [copied, setCopied] = useState(false);
       const toastTimer = useRef(null);
 
@@ -1372,6 +1553,7 @@ window.__ModuleLoader__.load({
         setAnnotationForm({
           category: skill.manualCategory ?? '',
           author: skill.manualAuthor ?? '',
+          series: skill.manualSeries ?? '',
         });
         setAnnotationError('');
       }, []);
@@ -1384,6 +1566,7 @@ window.__ModuleLoader__.load({
             name: annotating.name,
             category: annotationForm.category,
             author: annotationForm.author,
+            series: annotationForm.series,
           });
           replaceSkill(payload.skill);
           setAnnotating(null);
@@ -1394,6 +1577,35 @@ window.__ModuleLoader__.load({
           setAnnotationBusy(false);
         }
       }, [annotating, annotationForm, notify, replaceSkill]);
+
+      const openRenameSeries = useCallback((group) => {
+        const first = [...group.skills].sort(bySkillName)[0];
+        if (!first) return;
+        setRenaming({ from: group.label, name: first.name, count: group.count });
+        setRenameValue(group.label);
+        setRenameError('');
+      }, []);
+
+      const submitRenameSeries = useCallback(async () => {
+        if (!renaming || renameBusy) return;
+        const series = renameValue.trim();
+        if (!series) return;
+        setRenameBusy(true);
+        try {
+          await api('/annotate', {
+            name: renaming.name,
+            previousSeries: renaming.from,
+            series,
+          });
+          setRenaming(null);
+          notify(t('seriesRenamed'));
+          await load();
+        } catch (error) {
+          setRenameError(error.message);
+        } finally {
+          setRenameBusy(false);
+        }
+      }, [load, notify, renameBusy, renameValue, renaming]);
 
       const toggle = useCallback(
         async (skill, surface, enabled) => {
@@ -1569,16 +1781,25 @@ window.__ModuleLoader__.load({
         };
       }, [state.skills]);
 
-      const categorySuggestions = useMemo(() => {
+      const suggestionsFor = useCallback((read) => {
         const seen = new Map();
         for (const skill of state.skills) {
-          const value = (skill.manualCategory || '').trim();
+          const value = String(read(skill) || '').trim();
           if (!value) continue;
           const key = value.toLowerCase();
           if (!seen.has(key)) seen.set(key, value);
         }
         return [...seen.values()].sort((a, b) => a.localeCompare(b));
       }, [state.skills]);
+
+      const categorySuggestions = useMemo(
+        () => suggestionsFor((skill) => skill.manualCategory),
+        [suggestionsFor],
+      );
+      const seriesSuggestions = useMemo(
+        () => suggestionsFor((skill) => skill.manualSeries),
+        [suggestionsFor],
+      );
 
       const visible = useMemo(() => {
         const needle = query.trim().toLowerCase();
@@ -1599,7 +1820,13 @@ window.__ModuleLoader__.load({
         [state.roots],
       );
 
-      const groups = useMemo(() => groupSkills(visible, groupBy, rootLabels), [groupBy, rootLabels, visible]);
+      const cardGroups = useMemo(
+        () => groupSkills(visible, groupBy, rootLabels),
+        [groupBy, rootLabels, visible],
+      );
+      // The Map always groups by series; the Cards group-by choice never
+      // changes the board.
+      const seriesGroups = useMemo(() => groupSkills(visible, 'series'), [visible]);
 
       const skillProps = (skill) => ({
         key: skill.name,
@@ -1633,9 +1860,15 @@ window.__ModuleLoader__.load({
             : visible.length === 0
               ? h('div', { className: 'deck-empty' }, state.skills.length === 0 ? t('empty') : t('noMatch'))
               : view === 'map'
-                ? h(SkillMap, { groups, busy, onEdit: openEditor, rootLabels })
+                ? h(SkillMap, {
+                    groups: seriesGroups,
+                    busy,
+                    onEdit: openEditor,
+                    rootLabels,
+                    onRenameSeries: openRenameSeries,
+                  })
                 : view === 'cards'
-                  ? h(SkillCardWall, { groups, cardProps: skillProps })
+                  ? h(SkillCardWall, { groups: cardGroups, cardProps: skillProps })
                   : h(SkillList, { skills: visible, rowProps: skillProps });
 
       return h(
@@ -1715,18 +1948,20 @@ window.__ModuleLoader__.load({
                 t('viewMap'),
               ),
             ),
-            h(
-              'select',
-              {
-                className: 'deck-select deck-groupby',
-                value: groupBy,
-                'aria-label': t('groupBy'),
-                onChange: (event) => chooseGroupBy(event.target.value),
-              },
-              GROUPINGS.map((id) =>
-                h('option', { key: id, value: id }, t(GROUP_AXES[id].labelKey)),
-              ),
-            ),
+            view === 'map'
+              ? null
+              : h(
+                  'select',
+                  {
+                    className: 'deck-select deck-groupby',
+                    value: groupBy,
+                    'aria-label': t('groupBy'),
+                    onChange: (event) => chooseGroupBy(event.target.value),
+                  },
+                  GROUPINGS.map((id) =>
+                    h('option', { key: id, value: id }, t(GROUP_AXES[id].labelKey)),
+                  ),
+                ),
             h('button', { className: 'deck-btn', onClick: openCreate }, t('create')),
             h(
               'button',
@@ -1831,6 +2066,7 @@ window.__ModuleLoader__.load({
               skill: annotating,
               form: annotationForm,
               suggestions: categorySuggestions,
+              seriesSuggestions,
               busy: annotationBusy,
               error: annotationError,
               onChange: (field, value) => {
@@ -1839,6 +2075,20 @@ window.__ModuleLoader__.load({
               },
               onSubmit: submitAnnotation,
               onClose: () => setAnnotating(null),
+            })
+          : null,
+        renaming
+          ? h(RenameSeriesDialog, {
+              from: renaming.from,
+              value: renameValue,
+              busy: renameBusy,
+              error: renameError,
+              onChange: (value) => {
+                setRenameValue(value);
+                if (renameError) setRenameError('');
+              },
+              onSubmit: submitRenameSeries,
+              onClose: () => setRenaming(null),
             })
           : null,
         duplicating
@@ -1921,7 +2171,18 @@ window.__ModuleLoader__.load({
       name: NS,
       inject: ['slots'],
       apply,
-      components: { Panel, DeckPage, DeckIcon, SkillRow, SkillCard, CreateDialog, DuplicateDialog, AnnotationDialog, DiagFooter },
+      components: {
+        Panel,
+        DeckPage,
+        DeckIcon,
+        SkillRow,
+        SkillCard,
+        CreateDialog,
+        DuplicateDialog,
+        AnnotationDialog,
+        RenameSeriesDialog,
+        DiagFooter,
+      },
     };
   },
 });
