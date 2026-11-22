@@ -142,6 +142,16 @@ window.__ModuleLoader__.load({
       newSeriesTitle: '新建系列',
       newSeriesHint: '技能会加入这个系列；已有同名系列会直接沿用。',
       newSeriesAction: '创建并移入',
+      suggestSeries: '建议系列',
+      suggestTitle: '建议系列',
+      suggestInferred: '推断',
+      suggestInferredHint: '以下分组由 frontmatter 元数据推断，请先检查并修改再应用。',
+      suggestSeriesName: '系列名',
+      suggestApply: '应用建议',
+      suggestApplying: '应用中…',
+      suggestApplied: '系列建议已应用',
+      suggestUndone: '已撤销系列建议',
+      suggestNone: '没有可以建议系列的技能。',
     };
 
     const en = {
@@ -266,6 +276,16 @@ window.__ModuleLoader__.load({
       newSeriesTitle: 'New series',
       newSeriesHint: 'The skill joins this series; an existing name is reused as-is.',
       newSeriesAction: 'Create and move',
+      suggestSeries: 'Suggest series',
+      suggestTitle: 'Suggest series',
+      suggestInferred: 'Inferred',
+      suggestInferredHint: 'This grouping is inferred from frontmatter metadata. Review and edit it before applying.',
+      suggestSeriesName: 'Series name',
+      suggestApply: 'Apply suggestions',
+      suggestApplying: 'Applying…',
+      suggestApplied: 'Suggested series applied',
+      suggestUndone: 'Suggested series undone',
+      suggestNone: 'No skills to suggest a series for.',
     };
 
     const language = (navigator.language || 'en').toLowerCase();
@@ -306,6 +326,13 @@ window.__ModuleLoader__.load({
       .deck-card-actions { display: flex; gap: 6px; flex-wrap: wrap; }
       .deck-card-actions .deck-btn { height: 24px; padding: 0 8px; font-size: 11px; }
       .deck-map { display: flex; flex-direction: column; gap: 14px; }
+      .deck-map-tools { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+      .deck-map-tools .deck-btn { height: 26px; padding: 0 10px; font-size: 11px; }
+      .deck-suggest-group { display: flex; flex-direction: column; gap: 8px; padding: 10px 0; border-top: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.2)); }
+      .deck-suggest-group:first-of-type { border-top: 0; padding-top: 0; }
+      .deck-suggest-row { display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; }
+      .deck-suggest-skill-name { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      .deck-suggest-evidence { margin-left: auto; font-size: 11px; color: var(--dsw-alias-label-caption, inherit); }
       .deck-map-module { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.22)); border-radius: var(--dsw-radius-lg, 10px); }
       .deck-map-module.is-empty { padding: 8px 12px; }
       .deck-map-module-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -559,6 +586,52 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Coarse source modules for the Suggest series flow. `metadata.author` is
+     * the huashu signal, `metadata.credits.author` the Humanlayer one, and any
+     * skill without another known source falls back to Matt Pocock. The
+     * grouping is always inferred: the user reviews it before it is written.
+     */
+    const SUGGEST_MODULES = [
+      { key: 'huashu', name: 'huashu' },
+      { key: 'humanlayer', name: 'Humanlayer' },
+      { key: 'matt-pocock', name: 'Matt Pocock' },
+    ];
+
+    /** A skill keeps its existing series; suggestions never replace one. */
+    function hasSeries(skill) {
+      return String(skill.manualSeries || skill.series || '').trim() !== '';
+    }
+
+    function suggestionModuleFor(skill) {
+      if (skill.authorSource === 'metadata.author') return 'huashu';
+      if (skill.authorSource === 'metadata.credits.author') return 'humanlayer';
+      return 'matt-pocock';
+    }
+
+    /**
+     * Build the review proposal from every unassigned skill in the deck.
+     * Assigned skills are excluded up front, so applying the result cannot
+     * overwrite a manual series. Empty modules are not shown.
+     * @param {Array<object>} skills
+     * @returns {Array<{key: string, defaultName: string, skills: Array<object>}>}
+     */
+    function proposeSeries(skills) {
+      const groups = new Map(
+        SUGGEST_MODULES.map((module) => [
+          module.key,
+          { key: module.key, defaultName: module.name, skills: [] },
+        ]),
+      );
+      for (const skill of skills) {
+        if (hasSeries(skill)) continue;
+        groups.get(suggestionModuleFor(skill)).skills.push(skill);
+      }
+      return [...groups.values()]
+        .filter((group) => group.skills.length > 0)
+        .map((group) => ({ ...group, skills: [...group.skills].sort(bySkillName) }));
+    }
+
+    /**
      * Every tile has the same area; bundle bytes are not an area metric here.
      * Status is derived from the skill, with invalid winning over disabled so
      * a broken skill never merely looks switched off.
@@ -701,6 +774,7 @@ window.__ModuleLoader__.load({
         onMove,
         onAnnotate,
         seriesSuggestions,
+        onSuggest,
       } = props;
       const compact = useCompactMap();
       const [hovered, setHovered] = useState(null);
@@ -1012,6 +1086,19 @@ window.__ModuleLoader__.load({
           ref: boardRef,
           onDragOver: handleBoardDragOver,
         },
+        h(
+          'div',
+          { className: 'deck-map-tools' },
+          h(
+            'button',
+            {
+              type: 'button',
+              className: 'deck-btn deck-map-suggest',
+              onClick: () => onSuggest && onSuggest(),
+            },
+            t('suggestSeries'),
+          ),
+        ),
         modules.map((group) => {
           const empty = group.count === 0;
           const moduleTarget = targetForModule(group);
@@ -1709,6 +1796,89 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Review dialog for inferred series. Every module name is editable and
+     * every skill carries its own checkbox, so the proposal is only ever a
+     * starting point. The caller owns the proposal and the write.
+     */
+    function SeriesSuggestDialog(props) {
+      const { groups, names, checked, busy, error, onNameChange, onToggleSkill, onSubmit, onClose } =
+        props;
+      const ready = groups.some(
+        (group) =>
+          String(names[group.key] ?? '').trim() !== '' &&
+          group.skills.some((skill) => checked[skill.name]),
+      );
+      return h(
+        Modal,
+        { title: t('suggestTitle'), onClose },
+        h(
+          'div',
+          { className: 'deck-modal-body' },
+          h(
+            'p',
+            { className: 'deck-note', 'data-inferred': 'true' },
+            h('span', { className: 'deck-badge muted' }, t('suggestInferred')),
+            ' ' + t('suggestInferredHint'),
+          ),
+          groups.length === 0 ? h('p', { className: 'deck-empty' }, t('suggestNone')) : null,
+          groups.map((group) =>
+            h(
+              'section',
+              { key: group.key, className: 'deck-suggest-group', 'data-module': group.key },
+              h(
+                'label',
+                { className: 'deck-field' },
+                h('span', { className: 'deck-field-label' }, t('suggestSeriesName')),
+                h('input', {
+                  className: 'deck-input deck-suggest-name',
+                  value: names[group.key] ?? '',
+                  spellCheck: false,
+                  'aria-label': t('suggestSeriesName') + ' · ' + group.defaultName,
+                  onChange: (event) => onNameChange(group.key, event.target.value),
+                }),
+              ),
+              h(
+                'div',
+                { className: 'deck-suggest-skills' },
+                group.skills.map((skill) =>
+                  h(
+                    'label',
+                    { key: skill.name, className: 'deck-suggest-row', 'data-skill': skill.name },
+                    h('input', {
+                      type: 'checkbox',
+                      checked: Boolean(checked[skill.name]),
+                      onChange: (event) => onToggleSkill(skill.name, event.target.checked),
+                    }),
+                    h('span', { className: 'deck-suggest-skill-name' }, skill.name),
+                    skill.authorSource
+                      ? h('span', { className: 'deck-suggest-evidence' }, skill.author)
+                      : null,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          error ? h('p', { className: 'deck-error' }, error) : null,
+        ),
+        h(
+          'div',
+          { className: 'deck-modal-foot' },
+          h('span'),
+          h(
+            'div',
+            { style: { display: 'flex', gap: 8 } },
+            h('button', { className: 'deck-btn', onClick: onClose }, t('cancel')),
+            h(
+              'button',
+              { className: 'deck-btn primary', disabled: busy || !ready, onClick: onSubmit },
+              busy ? t('suggestApplying') : t('suggestApply'),
+            ),
+          ),
+        ),
+      );
+    }
+
+    /**
      * The center-column page. It reuses Panel and owns the page's scroll area;
      * the frame reserves its top strip through --dsh-frame-top-clearance.
      */
@@ -1746,12 +1916,19 @@ window.__ModuleLoader__.load({
       const [renameValue, setRenameValue] = useState('');
       const [renameError, setRenameError] = useState('');
       const [renameBusy, setRenameBusy] = useState(false);
+      const [suggestion, setSuggestion] = useState(null);
+      const [suggestNames, setSuggestNames] = useState({});
+      const [suggestChecked, setSuggestChecked] = useState({});
+      const [suggestError, setSuggestError] = useState('');
+      const [suggestBusy, setSuggestBusy] = useState(false);
       const [copied, setCopied] = useState(false);
       const toastTimer = useRef(null);
 
       const notify = useCallback((message, kind, action) => {
         if (toastTimer.current) clearTimeout(toastTimer.current);
         setToast({ message, kind: kind || 'ok', action: action ?? null });
+        // An actionable toast has to stay long enough to click; plain messages
+        // keep their existing short dwell time.
         toastTimer.current = setTimeout(() => setToast(null), action ? 8000 : 2600);
       }, []);
 
@@ -1922,6 +2099,90 @@ window.__ModuleLoader__.load({
         setRenameValue(group.label);
         setRenameError('');
       }, []);
+
+      const openSuggestSeries = useCallback(() => {
+        const groups = proposeSeries(state.skills);
+        const names = {};
+        const checked = {};
+        for (const group of groups) {
+          names[group.key] = group.defaultName;
+          for (const skill of group.skills) checked[skill.name] = true;
+        }
+        setSuggestion({ groups });
+        setSuggestNames(names);
+        setSuggestChecked(checked);
+        setSuggestError('');
+      }, [state.skills]);
+
+      const undoSeriesSuggestion = useCallback(
+        async (applied) => {
+          try {
+            for (const assignment of applied) {
+              const payload = await api('/annotate', {
+                name: assignment.name,
+                series: assignment.previousSeries,
+              });
+              replaceSkill(payload.skill);
+            }
+            notify(t('suggestUndone'));
+          } catch (error) {
+            notify(error.message, 'error');
+            await load();
+          }
+        },
+        [load, notify, replaceSkill],
+      );
+
+      const submitSuggestSeries = useCallback(async () => {
+        if (!suggestion || suggestBusy) return;
+        // Re-check every candidate at apply time: a skill that already carries
+        // a manual series is skipped, so the write can never overwrite one.
+        const assignments = [];
+        for (const group of suggestion.groups) {
+          const series = String(suggestNames[group.key] ?? '').trim();
+          if (!series) continue;
+          for (const skill of group.skills) {
+            if (!suggestChecked[skill.name] || hasSeries(skill)) continue;
+            assignments.push({
+              name: skill.name,
+              previousSeries: String(skill.manualSeries ?? ''),
+              series,
+            });
+          }
+        }
+        if (assignments.length === 0) return;
+        setSuggestBusy(true);
+        const applied = [];
+        try {
+          for (const assignment of assignments) {
+            const payload = await api('/annotate', {
+              name: assignment.name,
+              series: assignment.series,
+            });
+            replaceSkill(payload.skill);
+            applied.push(assignment);
+          }
+          setSuggestion(null);
+          notify(t('suggestApplied'), 'ok', {
+            label: t('undo'),
+            onClick: () => undoSeriesSuggestion(applied),
+          });
+        } catch (error) {
+          setSuggestError(error.message);
+          if (applied.length) await load();
+        } finally {
+          setSuggestBusy(false);
+        }
+      }, [
+        load,
+        notify,
+        replaceSkill,
+        suggestBusy,
+        suggestChecked,
+        suggestNames,
+        suggestion,
+        undoSeriesSuggestion,
+      ]);
 
       const submitRenameSeries = useCallback(async () => {
         if (!renaming || renameBusy) return;
@@ -2206,6 +2467,7 @@ window.__ModuleLoader__.load({
                     onMove: moveSkill,
                     onAnnotate: openAnnotation,
                     seriesSuggestions,
+                    onSuggest: openSuggestSeries,
                   })
                 : view === 'cards'
                   ? h(SkillCardWall, { groups: cardGroups, cardProps: skillProps })
@@ -2417,6 +2679,25 @@ window.__ModuleLoader__.load({
               onClose: () => setAnnotating(null),
             })
           : null,
+        suggestion
+          ? h(SeriesSuggestDialog, {
+              groups: suggestion.groups,
+              names: suggestNames,
+              checked: suggestChecked,
+              busy: suggestBusy,
+              error: suggestError,
+              onNameChange: (key, value) => {
+                setSuggestNames((prev) => ({ ...prev, [key]: value }));
+                if (suggestError) setSuggestError('');
+              },
+              onToggleSkill: (name, value) => {
+                setSuggestChecked((prev) => ({ ...prev, [name]: value }));
+                if (suggestError) setSuggestError('');
+              },
+              onSubmit: submitSuggestSeries,
+              onClose: () => setSuggestion(null),
+            })
+          : null,
         renaming
           ? h(RenameSeriesDialog, {
               from: renaming.from,
@@ -2472,7 +2753,7 @@ window.__ModuleLoader__.load({
                     'button',
                     {
                       type: 'button',
-                      className: 'deck-toast-action',
+                      className: 'deck-btn deck-toast-action',
                       onClick: () => {
                         const action = toast.action;
                         if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -2548,6 +2829,7 @@ window.__ModuleLoader__.load({
         AnnotationDialog,
         RenameSeriesDialog,
         NewSeriesDialog,
+        SeriesSuggestDialog,
         DiagFooter,
       },
     };
