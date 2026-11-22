@@ -77,6 +77,13 @@ window.__ModuleLoader__.load({
       copyDiag: '复制诊断信息',
       copied: '已复制',
       copyFailed: '复制失败，请手动选取。',
+      duplicate: '复制',
+      duplicateTitle: '复制技能',
+      duplicateName: '新名称',
+      duplicateHint: '会把整个技能目录复制一份，并把 frontmatter 里的 name 改成新名字。',
+      duplicateAction: '创建副本',
+      duplicating: '复制中…',
+      duplicated: '副本已创建',
       clientLoaded: '浏览器端已加载',
       clientMissing: '浏览器端未加载',
     };
@@ -143,6 +150,13 @@ window.__ModuleLoader__.load({
       copyDiag: 'Copy diagnostics',
       copied: 'Copied',
       copyFailed: 'Could not copy; select the text manually.',
+      duplicate: 'Duplicate',
+      duplicateTitle: 'Duplicate skill',
+      duplicateName: 'New name',
+      duplicateHint: 'Copies the whole skill folder and rewrites the name in its frontmatter.',
+      duplicateAction: 'Create copy',
+      duplicating: 'Duplicating…',
+      duplicated: 'Copy created',
       clientLoaded: 'Browser half loaded',
       clientMissing: 'Browser half not loaded',
     };
@@ -313,7 +327,7 @@ window.__ModuleLoader__.load({
     }
 
     function SkillRow(props) {
-      const { skill, busy, onToggle, onEdit, onReveal, onRemove } = props;
+      const { skill, busy, onToggle, onEdit, onReveal, onDuplicate, onRemove } = props;
       return h(
         'li',
         { className: 'deck-row' },
@@ -368,6 +382,7 @@ window.__ModuleLoader__.load({
             t('edit'),
           ),
           h('button', { className: 'deck-btn', onClick: () => onReveal(skill) }, t('reveal')),
+          h('button', { className: 'deck-btn', onClick: () => onDuplicate(skill) }, t('duplicate')),
           h('button', { className: 'deck-btn danger', onClick: () => onRemove(skill) }, t('remove')),
         ),
       );
@@ -395,6 +410,47 @@ window.__ModuleLoader__.load({
           'button',
           { className: 'deck-btn', onClick: onCopy, title: t('copyDiag') },
           copied ? t('copied') : t('copyDiag'),
+        ),
+      );
+    }
+
+    function DuplicateDialog(props) {
+      const { source, name, busy, error, onName, onSubmit, onClose } = props;
+      return h(
+        Modal,
+        { title: t('duplicateTitle') + ' · ' + source.name, onClose },
+        h(
+          'div',
+          { className: 'deck-modal-body' },
+          h(
+            'label',
+            { className: 'deck-field' },
+            h('span', { className: 'deck-field-label' }, t('duplicateName')),
+            h('input', {
+              className: 'deck-input',
+              value: name,
+              spellCheck: false,
+              'aria-label': t('duplicateName'),
+              onChange: (event) => onName(event.target.value),
+            }),
+            h('span', { className: 'deck-note' }, t('duplicateHint')),
+          ),
+          error ? h('p', { className: 'deck-error' }, error) : null,
+        ),
+        h(
+          'div',
+          { className: 'deck-modal-foot' },
+          h('span', { className: 'deck-note' }, source.path),
+          h(
+            'div',
+            { style: { display: 'flex', gap: 8 } },
+            h('button', { className: 'deck-btn', onClick: onClose }, t('cancel')),
+            h(
+              'button',
+              { className: 'deck-btn primary', disabled: busy || name.trim() === '', onClick: onSubmit },
+              busy ? t('duplicating') : t('duplicateAction'),
+            ),
+          ),
         ),
       );
     }
@@ -488,6 +544,10 @@ window.__ModuleLoader__.load({
       const [createForm, setCreateForm] = useState({ name: '', description: '', scope: 'user-dsh' });
       const [createError, setCreateError] = useState('');
       const [createBusy, setCreateBusy] = useState(false);
+      const [duplicating, setDuplicating] = useState(null);
+      const [dupName, setDupName] = useState('');
+      const [dupError, setDupError] = useState('');
+      const [dupBusy, setDupBusy] = useState(false);
       const [copied, setCopied] = useState(false);
       const toastTimer = useRef(null);
 
@@ -537,6 +597,32 @@ window.__ModuleLoader__.load({
           skills: prev.skills.map((item) => (item.name === skill.name ? skill : item)),
         }));
       }, []);
+
+      const openDuplicate = useCallback((skill) => {
+        setDuplicating(skill);
+        setDupName(skill.name + '-copy');
+        setDupError('');
+      }, []);
+
+      const submitDuplicate = useCallback(async () => {
+        if (!duplicating) return;
+        const newName = dupName.trim();
+        if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(newName)) {
+          setDupError(t('nameRequired'));
+          return;
+        }
+        setDupBusy(true);
+        try {
+          await api('/duplicate', { name: duplicating.name, newName });
+          setDuplicating(null);
+          notify(t('duplicated'));
+          await load();
+        } catch (error) {
+          setDupError(error.message);
+        } finally {
+          setDupBusy(false);
+        }
+      }, [dupName, duplicating, load, notify]);
 
       const toggle = useCallback(
         async (skill, surface, enabled) => {
@@ -734,6 +820,7 @@ window.__ModuleLoader__.load({
           onToggle: toggle,
           onEdit: openEditor,
           onReveal: reveal,
+          onDuplicate: openDuplicate,
           onRemove: (target) => {
             setConfirming(target);
             setConfirmText('');
@@ -896,6 +983,20 @@ window.__ModuleLoader__.load({
               ),
             )
           : null,
+        duplicating
+          ? h(DuplicateDialog, {
+              source: duplicating,
+              name: dupName,
+              busy: dupBusy,
+              error: dupError,
+              onName: (value) => {
+                setDupName(value);
+                if (dupError) setDupError('');
+              },
+              onSubmit: submitDuplicate,
+              onClose: () => setDuplicating(null),
+            })
+          : null,
         creating
           ? h(CreateDialog, {
               form: createForm,
@@ -937,7 +1038,7 @@ window.__ModuleLoader__.load({
       );
     }
 
-    return { name: NS, inject: ['slots'], apply, components: { Panel, SkillRow, CreateDialog, DiagFooter } };
+    return { name: NS, inject: ['slots'], apply, components: { Panel, SkillRow, CreateDialog, DuplicateDialog, DiagFooter } };
   },
 });
 

@@ -17,6 +17,8 @@ DSH discovers skills from disk and hot-reloads them, but the only way to change 
   valid `SKILL.md` and opens it for editing.
 - A footer shows the plugin version, platform, and per-root counts, with a
   **Copy diagnostics** button whose text is useful in a bug report.
+- **Duplicate** a skill under a new name; the copy keeps its assets and gets a
+  rewritten `name:` field.
 - **Delete safely** — removing a skill moves its directory to `~/.dsh/skills-trash/` instead of destroying it.
 
 ## Install
@@ -104,7 +106,19 @@ how to report an issue.
 
 - Project-level roots (`<repo>/.dsh/skills`) with a workspace picker.
 - Install a skill from a GitHub `owner/repo` source instead of only editing local ones.
-- Duplicate a skill as a starting point for a variant.
+- Per-root filtering once project roots exist.
+
+## Releases
+
+`main` holds released code and `develop` integrates work in progress. Versions
+follow SemVer, and each release is a `vX.Y.Z` tag that also creates a GitHub
+Release. To install a pinned version:
+
+```text
+https://github.com/zliu0559/dsh-skill-deck/archive/refs/tags/v0.3.0.tar.gz
+```
+
+The full flow is in [docs/RELEASING.md](docs/RELEASING.md).
 
 ## License
 

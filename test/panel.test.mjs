@@ -86,6 +86,11 @@ globalThis.fetch = async (url, init) => {
     profile = { ...profile, skills: [...profile.skills, created], totals: { ...profile.totals, skills: 2 } };
     return json({ ok: true, skill: created, revision: 'rev-4' });
   }
+  if (path === '/dsh-skill-deck/duplicate') {
+    const copy = { ...profile.skills[0], name: body.newName };
+    profile = { ...profile, skills: [...profile.skills, copy], totals: { ...profile.totals, skills: profile.skills.length + 1 } };
+    return json({ ok: true, skill: copy, revision: 'rev-5' });
+  }
   if (path === '/dsh-skill-deck/signal') return { ok: true, status: 200, json: async () => ({ ok: true }) };
   if (path === '/dsh-skill-deck/delete') return json({ ok: true, trashedTo: '/tmp/x' });
   throw new Error('unexpected request ' + path);
@@ -201,6 +206,22 @@ test('the create dialog posts a new skill', async () => {
   const create = calls.find((call) => call.path === '/dsh-skill-deck/create');
   assert.ok(create, 'create was requested');
   assert.deepEqual(create.body, { name: 'fresh-one', description: 'A brand new skill.', scope: 'user-dsh' });
+});
+
+test('the duplicate dialog copies the skill under a new name', async () => {
+  calls.length = 0;
+  await click(buttonByText('Duplicate'));
+  const input = container.querySelector('.deck-modal input');
+  assert.ok(input, 'duplicate dialog opened');
+  assert.equal(input.value, 'demo-copy');
+  await act(async () => {
+    setValue(input, 'demo-renamed');
+  });
+  await settle();
+  await click(buttonByText('Create copy'));
+  const duplicate = calls.find((call) => call.path === '/dsh-skill-deck/duplicate');
+  assert.ok(duplicate, 'duplicate was requested');
+  assert.deepEqual(duplicate.body, { name: 'demo', newName: 'demo-renamed' });
 });
 
 test('cleanup', async () => {
