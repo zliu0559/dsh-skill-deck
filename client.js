@@ -244,6 +244,11 @@ window.__ModuleLoader__.load({
       .deck-foot .deck-btn { height: 24px; padding: 0 9px; font-size: 11px; margin-left: auto; }
       .deck-toast { position: fixed; right: 24px; bottom: 24px; z-index: 70; padding: 10px 14px; border-radius: var(--dsw-radius-md, 8px); background: #111827; color: #f9fafb; font-size: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
       .deck-toast.error { background: #7f1d1d; }
+      .deck-page { box-sizing: border-box; height: 100%; min-height: 0; overflow: auto; padding: 28px clamp(20px, 4vw, 48px) 32px; }
+      [data-platform='darwin'] .deck-page { padding-top: calc(28px + var(--dsh-frame-top-clearance, 0px)); }
+      .deck-page > .deck { width: 100%; max-width: 960px; margin: 0 auto; }
+      .deck-icon { display: block; opacity: .72; }
+      .deck-icon.active { opacity: 1; }
       @media (max-width: 720px) { .deck-row { grid-template-columns: 1fr; } }
     `;
 
@@ -316,6 +321,33 @@ window.__ModuleLoader__.load({
 
     function Badge(props) {
       return h('span', { className: 'deck-badge' + (props.muted ? ' muted' : '') + (props.warn ? ' warn' : '') }, props.children);
+    }
+
+    /**
+     * The sidebar entry: the host owns the button, label, tooltip and active
+     * state, and renders this glyph with `{ size, active }`.
+     */
+    function DeckIcon(props) {
+      const size = typeof props.size === 'number' ? props.size : 18;
+      return h(
+        'svg',
+        {
+          className: 'deck-icon' + (props.active ? ' active' : ''),
+          width: size,
+          height: size,
+          viewBox: '0 0 24 24',
+          fill: 'none',
+          stroke: 'currentColor',
+          strokeWidth: 1.7,
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+          'aria-hidden': 'true',
+          focusable: 'false',
+        },
+        h('rect', { x: 3.5, y: 4.5, width: 17, height: 4.2, rx: 1.4 }),
+        h('rect', { x: 3.5, y: 10.4, width: 17, height: 4.2, rx: 1.4, opacity: 0.85 }),
+        h('rect', { x: 3.5, y: 16.3, width: 11, height: 4.2, rx: 1.4, opacity: 0.7 }),
+      );
     }
 
     function SurfaceSwitch(props) {
@@ -630,6 +662,14 @@ window.__ModuleLoader__.load({
           ),
         ),
       );
+    }
+
+    /**
+     * The center-column page. It reuses Panel and owns the page's scroll area;
+     * the frame reserves its top strip through --dsh-frame-top-clearance.
+     */
+    function DeckPage() {
+      return h('div', { className: 'deck-page' }, h(Panel));
     }
 
     function Panel() {
@@ -1199,13 +1239,34 @@ window.__ModuleLoader__.load({
           () => h(Panel),
         ),
       );
+      // Shipped panels use orders 0 (Plugins) and 10 (Automation tasks).
+      ctx.slots.inject('sidebar.panellist', () =>
+        ctx.slots.register(
+          {
+            name: 'sidebar.panellist',
+            id: NS,
+            order: 20,
+            label: () => t('title'),
+          },
+          DeckIcon,
+        ),
+      );
+      ctx.slots.inject('main', () =>
+        ctx.slots.register(
+          {
+            name: 'main',
+            key: NS,
+          },
+          () => h(DeckPage),
+        ),
+      );
     }
 
     return {
       name: NS,
       inject: ['slots'],
       apply,
-      components: { Panel, SkillRow, CreateDialog, DuplicateDialog, AnnotationDialog, DiagFooter },
+      components: { Panel, DeckPage, DeckIcon, SkillRow, CreateDialog, DuplicateDialog, AnnotationDialog, DiagFooter },
     };
   },
 });
