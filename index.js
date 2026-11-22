@@ -15,11 +15,25 @@ import {
   saveSkill,
   toggleSkill,
 } from './lib/store.js';
+import { readFileSync } from 'node:fs';
 
 const ROUTE_BASE = '/dsh-skill-deck';
 const BODY_LIMIT_BYTES = 2 * 1024 * 1024;
 
 export const name = 'dsh-skill-deck';
+
+let cachedVersion;
+
+function pluginVersion() {
+  if (cachedVersion !== undefined) return cachedVersion;
+  try {
+    const manifest = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
+    cachedVersion = typeof manifest.version === 'string' ? manifest.version : 'unknown';
+  } catch {
+    cachedVersion = 'unknown';
+  }
+  return cachedVersion;
+}
 
 function sendJson(response, status, payload) {
   const body = JSON.stringify(payload);
@@ -141,7 +155,15 @@ export function apply(ctx) {
         userInvocable: skills.filter((skill) => skill.userInvocable).length,
         invalid: skills.filter((skill) => !skill.valid).length,
       };
-      sendJson(response, 200, { ok: true, roots, skills, totals });
+      sendJson(response, 200, {
+        ok: true,
+        roots,
+        skills,
+        totals,
+        version: pluginVersion(),
+        platform: process.platform,
+        node: process.versions.node,
+      });
     });
 
     route('/create', async (request, response) => {

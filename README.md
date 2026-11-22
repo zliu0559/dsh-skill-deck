@@ -15,6 +15,8 @@ DSH discovers skills from disk and hot-reloads them, but the only way to change 
 - **Edit the whole document** — `SKILL.md` opens in a full-text editor and is saved atomically, with a revision guard against overwriting an external change.
 - **Create** a skill from a name and a one-line description; the plugin writes a
   valid `SKILL.md` and opens it for editing.
+- A footer shows the plugin version, platform, and per-root counts, with a
+  **Copy diagnostics** button whose text is useful in a bug report.
 - **Delete safely** — removing a skill moves its directory to `~/.dsh/skills-trash/` instead of destroying it.
 
 ## Install

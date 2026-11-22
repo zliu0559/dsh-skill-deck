@@ -74,6 +74,9 @@ window.__ModuleLoader__.load({
       creating: '创建中…',
       created: '已创建，正在打开编辑器',
       nameRequired: '请填写合规的技能名和描述。',
+      copyDiag: '复制诊断信息',
+      copied: '已复制',
+      copyFailed: '复制失败，请手动选取。',
     };
 
     const en = {
@@ -135,6 +138,9 @@ window.__ModuleLoader__.load({
       creating: 'Creating…',
       created: 'Created — opening the editor',
       nameRequired: 'Enter a valid name and a description.',
+      copyDiag: 'Copy diagnostics',
+      copied: 'Copied',
+      copyFailed: 'Could not copy; select the text manually.',
     };
 
     const language = (navigator.language || 'en').toLowerCase();
@@ -185,6 +191,8 @@ window.__ModuleLoader__.load({
       .deck-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
       .deck-field-label { font-size: 12px; font-weight: 600; }
       .deck-field .deck-input, .deck-field .deck-select { width: 100%; min-width: 0; }
+      .deck-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding-top: 10px; border-top: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.2)); }
+      .deck-foot .deck-btn { height: 24px; padding: 0 9px; font-size: 11px; margin-left: auto; }
       .deck-toast { position: fixed; right: 24px; bottom: 24px; z-index: 70; padding: 10px 14px; border-radius: var(--dsw-radius-md, 8px); background: #111827; color: #f9fafb; font-size: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
       .deck-toast.error { background: #7f1d1d; }
       @media (max-width: 720px) { .deck-row { grid-template-columns: 1fr; } }
@@ -344,6 +352,27 @@ window.__ModuleLoader__.load({
       );
     }
 
+    function DiagFooter(props) {
+      const { version, platform, roots, onCopy, copied } = props;
+      return h(
+        'div',
+        { className: 'deck-foot' },
+        h('span', { className: 'deck-note' }, 'v' + version + (platform ? ' · ' + platform : '')),
+        (roots ?? []).map((root) =>
+          h(
+            'span',
+            { key: root.id, className: 'deck-note', title: root.path },
+            root.label + ' · ' + root.count,
+          ),
+        ),
+        h(
+          'button',
+          { className: 'deck-btn', onClick: onCopy, title: t('copyDiag') },
+          copied ? t('copied') : t('copyDiag'),
+        ),
+      );
+    }
+
     function CreateDialog(props) {
       const { form, busy, error, onChange, onSubmit, onClose } = props;
       const ready = form.name.trim() !== '' && form.description.trim() !== '';
@@ -418,7 +447,7 @@ window.__ModuleLoader__.load({
     }
 
     function Panel() {
-      const [state, setState] = useState({ status: 'loading', error: null, skills: [], roots: [], totals: null });
+      const [state, setState] = useState({ status: 'loading', error: null, skills: [], roots: [], totals: null, version: '', platform: '' });
       const [query, setQuery] = useState('');
       const [filter, setFilter] = useState('all');
       const [busy, setBusy] = useState('');
@@ -433,6 +462,7 @@ window.__ModuleLoader__.load({
       const [createForm, setCreateForm] = useState({ name: '', description: '', scope: 'user-dsh' });
       const [createError, setCreateError] = useState('');
       const [createBusy, setCreateBusy] = useState(false);
+      const [copied, setCopied] = useState(false);
       const toastTimer = useRef(null);
 
       const notify = useCallback((message, kind) => {
@@ -445,7 +475,15 @@ window.__ModuleLoader__.load({
         setState((prev) => ({ ...prev, status: prev.skills.length ? prev.status : 'loading', error: null }));
         try {
           const payload = await api('/state');
-          setState({ status: 'ready', error: null, skills: payload.skills, roots: payload.roots, totals: payload.totals });
+          setState({
+            status: 'ready',
+            error: null,
+            skills: payload.skills,
+            roots: payload.roots,
+            totals: payload.totals,
+            version: payload.version ?? '',
+            platform: payload.platform ?? '',
+          });
         } catch (error) {
           setState({ status: 'error', error: error.message, skills: [], roots: [], totals: null });
         }
@@ -607,6 +645,31 @@ window.__ModuleLoader__.load({
         [notify],
       );
 
+      const copyDiag = useCallback(async () => {
+        const lines = ['dsh-skill-deck v' + (state.version || '?') + ' (' + (state.platform || '?') + ')'];
+        for (const root of state.roots) {
+          const count = state.skills.filter((skill) => skill.root === root.id).length;
+          lines.push('root ' + root.id + ': ' + count + ' — ' + root.path);
+        }
+        lines.push('totals: ' + JSON.stringify(state.totals));
+        try {
+          await navigator.clipboard.writeText(lines.join('\n'));
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1600);
+        } catch {
+          notify(t('copyFailed'), 'error');
+        }
+      }, [notify, state]);
+
+      const rootsWithCounts = useMemo(
+        () =>
+          state.roots.map((root) => ({
+            ...root,
+            count: state.skills.filter((skill) => skill.root === root.id).length,
+          })),
+        [state.roots, state.skills],
+      );
+
       const counts = useMemo(() => {
         const enabled = state.skills.filter((skill) => skill.modelInvocable || skill.userInvocable).length;
         return {
@@ -711,6 +774,15 @@ window.__ModuleLoader__.load({
           ),
         ),
         body,
+        state.status === 'ready'
+          ? h(DiagFooter, {
+              version: state.version,
+              platform: state.platform,
+              roots: rootsWithCounts,
+              onCopy: copyDiag,
+              copied,
+            })
+          : null,
         editor
           ? h(
               Modal,
@@ -831,7 +903,7 @@ window.__ModuleLoader__.load({
       );
     }
 
-    return { name: NS, inject: ['slots'], apply, components: { Panel, SkillRow, CreateDialog } };
+    return { name: NS, inject: ['slots'], apply, components: { Panel, SkillRow, CreateDialog, DiagFooter } };
   },
 });
 

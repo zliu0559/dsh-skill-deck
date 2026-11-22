@@ -6,6 +6,8 @@
   in `~/.dsh/skills` or `~/.agents/skills`, then land straight in the editor.
 - The plugin creates `<root>/<name>/SKILL.md` with valid frontmatter (quoting the
   description when it needs it) and refuses duplicate or non-kebab-case names.
+- A footer shows the plugin version, platform, and how many skills each root
+  holds, with a **Copy diagnostics** action for bug reports.
 
 ## 0.1.1 — 2026-11-22
 

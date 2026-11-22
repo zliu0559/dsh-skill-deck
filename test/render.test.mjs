@@ -29,7 +29,7 @@ const module = captured.factory((id) => {
   assert.equal(id, 'react');
   return React;
 });
-const { SkillRow, Panel, CreateDialog } = module.components;
+const { SkillRow, Panel, CreateDialog, DiagFooter } = module.components;
 
 const skill = {
   name: 'demo-skill',
@@ -87,6 +87,27 @@ test('Panel renders its loading state without a backend', () => {
   const markup = renderToStaticMarkup(React.createElement(Panel));
   assert.match(markup, /正在读取技能/);
   assert.match(markup, /技能/);
+});
+
+test('DiagFooter shows the version, root counts and a copy action', () => {
+  const markup = renderToStaticMarkup(
+    React.createElement(DiagFooter, {
+      version: '0.2.0',
+      platform: 'win32',
+      roots: [
+        { id: 'user-dsh', label: '~/.dsh/skills', path: 'C:\\Users\\me\\.dsh\\skills', count: 28 },
+        { id: 'user-agents', label: '~/.agents/skills', path: 'C:\\Users\\me\\.agents\\skills', count: 0 },
+      ],
+      onCopy: noop,
+      copied: false,
+    }),
+  );
+  assert.match(markup, /v0\.2\.0/);
+  assert.match(markup, /win32/);
+  assert.match(markup, /~\/\.dsh\/skills · 28/);
+  assert.match(markup, /~\/\.agents\/skills · 0/);
+  assert.match(markup, /复制诊断信息/);
+  assert.match(markup, /title="C:[^"]*skills"/);
 });
 
 test('CreateDialog renders its fields and keeps submit disabled until filled', () => {
