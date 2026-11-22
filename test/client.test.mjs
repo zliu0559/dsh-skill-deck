@@ -100,4 +100,8 @@ test('exports the cordis client shape and registers Settings, sidebar and main',
 
   assert.equal(appended.length, 1, 'styles injected once');
   assert.equal(effects.length, 1, 'style cleanup registered');
+
+  const css = appended[0].textContent;
+  assert.match(css, /\.deck-page\s*\{[^}]*height:\s*100%[^}]*overflow:\s*auto/, 'page owns its scroll container');
+  assert.match(css, /var\(--dsh-frame-top-clearance/, 'page leaves the frame top strip clear');
 });
