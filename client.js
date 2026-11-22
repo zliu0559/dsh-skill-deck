@@ -10,7 +10,7 @@ window.__ModuleLoader__.load({
   factory(require) {
     const React = require('react');
     const h = React.createElement;
-    const { useCallback, useEffect, useMemo, useRef, useState } = React;
+    const { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } = React;
 
     const NS = 'dsh-skill-deck';
     const API = '/dsh-skill-deck';
@@ -111,7 +111,9 @@ window.__ModuleLoader__.load({
       viewCards: '卡片',
       viewMap: '地图',
       mapLabel: '技能地图',
-      mapLegend: '分组图例',
+      mapStatusLegend: '状态图例',
+      mapDetails: '技能详情',
+      mapPick: '点按技能查看详情。',
       groupBy: '分组',
       groupByCategory: '分类',
       groupByAuthor: '作者',
@@ -210,7 +212,9 @@ window.__ModuleLoader__.load({
       viewCards: 'Cards',
       viewMap: 'Map',
       mapLabel: 'Skill map',
-      mapLegend: 'Group legend',
+      mapStatusLegend: 'Status legend',
+      mapDetails: 'Skill details',
+      mapPick: 'Tap a skill to see details.',
       groupBy: 'Group by',
       groupByCategory: 'Category',
       groupByAuthor: 'Author',
@@ -255,20 +259,35 @@ window.__ModuleLoader__.load({
       .deck-card-controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-top: auto; }
       .deck-card-actions { display: flex; gap: 6px; flex-wrap: wrap; }
       .deck-card-actions .deck-btn { height: 24px; padding: 0 8px; font-size: 11px; }
-      .deck-map { display: flex; flex-direction: column; gap: 12px; }
-      .deck-map-canvas { position: relative; width: 100%; height: min(62vh, 520px); min-height: 320px; border-radius: var(--dsw-radius-lg, 10px); border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.22)); background: rgba(127,127,127,.06); overflow: hidden; }
-      .deck-map-block { position: absolute; display: flex; align-items: flex-end; box-sizing: border-box; margin: 0; padding: 5px 7px; border: 1px solid rgba(255,255,255,.28); border-radius: 3px; overflow: hidden; color: #fff; font: inherit; text-align: left; cursor: pointer; }
-      .deck-map-block:hover { z-index: 3; overflow: visible; border-color: rgba(255,255,255,.72); filter: brightness(1.08); }
-      .deck-map-block:focus, .deck-map-block:focus-visible { z-index: 3; overflow: visible; outline: 2px solid var(--dsw-focus-ring-color, #3b82f6); outline-offset: -3px; }
-      .deck-map-details { position: absolute; left: 4px; bottom: 4px; display: flex; align-items: baseline; gap: 6px; max-width: min(240px, 86vw); padding: 2px 6px; border-radius: 4px; background: rgba(17,24,39,.88); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; transform: translateY(3px); transition: opacity .12s ease, transform .12s ease; pointer-events: none; }
-      .deck-map-block:hover .deck-map-details, .deck-map-block:focus .deck-map-details, .deck-map-block:focus-visible .deck-map-details { opacity: 1; transform: none; }
-      .deck-map-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; font-weight: 600; }
+      .deck-map { display: flex; flex-direction: column; gap: 14px; }
+      .deck-map-section { display: flex; flex-direction: column; gap: 8px; }
+      .deck-map-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; align-items: stretch; }
+      .deck-map-tile { position: relative; display: flex; flex-direction: column; gap: 6px; box-sizing: border-box; width: 100%; aspect-ratio: 3 / 2; margin: 0; padding: 10px 11px; border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.22)); border-radius: var(--dsw-radius-lg, 10px); color: inherit; font: inherit; text-align: left; cursor: pointer; overflow: hidden; }
+      .deck-map-tile:hover { border-color: var(--dsw-alias-border-l1, rgba(127,127,127,.45)); filter: brightness(.98); }
+      .deck-map-tile:focus-visible { outline: 2px solid var(--dsw-focus-ring-color, #3b82f6); outline-offset: 2px; }
+      .deck-map-tile:disabled { opacity: .6; cursor: default; }
+      .deck-map-tile-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; font-weight: 600; }
+      .deck-map-tile-badges { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; overflow: hidden; }
+      .deck-map-tile-badges .deck-badge { height: 16px; padding: 0 5px; font-size: 9px; }
+      .deck-map-tile-foot { display: flex; align-items: center; gap: 6px; margin-top: auto; font-size: 10px; color: var(--dsw-alias-label-secondary, inherit); }
+      .deck-status-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
       .deck-map-size { flex: none; font-size: 10px; opacity: .86; }
       .deck-map-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; font-size: 11px; color: var(--dsw-alias-label-secondary, inherit); }
       .deck-legend-item { display: inline-flex; align-items: center; gap: 6px; }
-      .deck-legend-swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+      .deck-legend-swatch { width: 10px; height: 10px; border-radius: 50%; flex: none; }
       .deck-legend-label { font-weight: 600; }
       .deck-legend-count { min-width: 18px; padding: 0 5px; border-radius: 999px; background: rgba(127,127,127,.16); text-align: center; font-size: 10px; font-weight: 600; }
+      .deck-map-popover { position: fixed; z-index: 40; box-sizing: border-box; width: 260px; max-width: calc(100vw - 16px); padding: 12px 14px; border-radius: var(--dsw-radius-lg, 10px); border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.3)); background: var(--dsw-alias-bg-layer-1, #fff); color: var(--dsw-alias-label-primary, inherit); box-shadow: var(--dsw-elevation-prominent, 0 16px 40px rgba(0,0,0,.28)); font-size: 12px; pointer-events: none; }
+      .deck-map-popover-name { margin-bottom: 5px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight: 600; word-break: break-word; }
+      .deck-map-popover-desc { margin-bottom: 7px; line-height: 1.5; color: var(--dsw-alias-label-secondary, inherit); }
+      .deck-map-popover-meta { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--dsw-alias-label-caption, inherit); }
+      .deck-map-strip { position: sticky; bottom: 0; z-index: 5; display: flex; align-items: flex-start; gap: 8px 14px; padding: 12px 14px; border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.3)); border-radius: var(--dsw-radius-lg, 10px); background: var(--dsw-alias-bg-layer-1, #fff); box-shadow: 0 -8px 24px rgba(0,0,0,.14); }
+      .deck-map-strip-info { display: flex; flex: 1 1 220px; flex-direction: column; gap: 4px; min-width: 0; }
+      .deck-map-strip-name { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; font-weight: 600; }
+      .deck-map-strip-desc { font-size: 12px; line-height: 1.5; color: var(--dsw-alias-label-secondary, inherit); }
+      .deck-map-strip-meta { font-size: 11px; color: var(--dsw-alias-label-caption, inherit); }
+      .deck-map-strip .deck-btn { flex: none; align-self: center; }
+      @media (max-width: 640px) { .deck-map-popover { display: none; } }
       .deck-row { display: grid; grid-template-columns: minmax(0,1fr) auto auto; gap: 12px; align-items: center; padding: 12px 14px; border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.22)); border-radius: var(--dsw-radius-lg, 10px); }
       .deck-name { display: flex; align-items: center; gap: 8px; font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
       .deck-desc { margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--dsw-alias-label-secondary, inherit); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -466,155 +485,314 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * A distinct color for every group index. Hues walk by the golden angle so
-     * a deck with more than a dozen groups still gets one color per legend
-     * entry instead of wrapping a fixed palette.
+     * Every tile has the same area; bundle bytes are not an area metric here.
+     * Status is derived from the skill, with invalid winning over disabled so
+     * a broken skill never merely looks switched off.
      */
-    function mapColor(index) {
-      const hue = ((index * 137.508) % 360).toFixed(2);
-      const saturation = index % 3 === 0 ? 68 : 60;
-      const lightness = index % 2 === 0 ? 42 : 50;
-      return 'hsl(' + hue + ', ' + saturation + '%, ' + lightness + '%)';
+    const MAP_STATUS_ORDER = ['invalid', 'disabled', 'enabled'];
+    const MAP_STATUS_LABEL = { invalid: 'invalid', disabled: 'disabled', enabled: 'enabled' };
+    const MAP_STATUS_TINT = {
+      invalid: 'rgba(220, 38, 38, .14)',
+      disabled: 'rgba(127, 127, 127, .16)',
+      enabled: 'rgba(34, 197, 94, .14)',
+    };
+    const MAP_STATUS_SOLID = {
+      invalid: '#dc2626',
+      disabled: '#6b7280',
+      enabled: '#16a34a',
+    };
+
+    function mapStatus(skill) {
+      if (!skill.valid) return 'invalid';
+      if (!skill.modelInvocable && !skill.userInvocable) return 'disabled';
+      return 'enabled';
+    }
+
+    function bySkillName(a, b) {
+      return String(a.name).localeCompare(String(b.name), undefined, { sensitivity: 'base' });
+    }
+
+    const MAP_COMPACT_QUERY = '(max-width: 640px), (pointer: coarse), (any-pointer: coarse)';
+
+    function hasTouchPointer() {
+      return typeof navigator !== 'undefined' && Number(navigator.maxTouchPoints) > 0;
     }
 
     /**
-     * Treemap area weight. Bundle bytes carry the area; a zero-byte skill
-     * falls back to its file count; a skill with neither contributes one
-     * unit, so an all-empty deck divides the map evenly.
+     * The map swaps its hover overlay for a details strip on narrow screens
+     * and touch pointers. matchMedia drives the switch so a resized window
+     * also updates the interaction model.
      */
-    function skillWeight(skill) {
-      const bytes = Number(skill.bytes);
-      if (Number.isFinite(bytes) && bytes > 0) return bytes;
-      const files = Number(skill.files);
-      if (Number.isFinite(files) && files > 0) return files;
-      return 1;
-    }
-
-    function worstAspect(row, side) {
-      let sum = 0;
-      let max = 0;
-      let min = Infinity;
-      for (const entry of row) {
-        sum += entry.area;
-        if (entry.area > max) max = entry.area;
-        if (entry.area < min) min = entry.area;
-      }
-      if (sum <= 0 || side <= 0 || min === Infinity) return Infinity;
-      return Math.max((side * side * max) / (sum * sum), (sum * sum) / (side * side * min));
-    }
-
-    /**
-     * Hand-written squarified treemap over a 100x100 canvas. Each returned
-     * entry keeps its skill and receives percentage x/y/width/height.
-     */
-    function squarifySkills(entries) {
-      const total = entries.reduce((sum, entry) => sum + entry.weight, 0);
-      const remaining = entries
-        .map((entry) => ({ ...entry, area: (entry.weight / total) * 10000 }))
-        .sort((a, b) => b.area - a.area);
-      const placed = [];
-      let rest = remaining;
-      let rect = { x: 0, y: 0, w: 100, h: 100 };
-      while (rest.length > 0) {
-        const side = Math.min(rect.w, rect.h);
-        if (!(side > 0)) {
-          // Float residue after the last row; stack the rest into the canvas.
-          for (const entry of rest) placed.push({ ...entry, x: 0, y: 0, w: 100, h: 100 });
-          break;
+    function useCompactMap() {
+      const query = useMemo(() => {
+        if (typeof window.matchMedia !== 'function') return null;
+        try {
+          return window.matchMedia(MAP_COMPACT_QUERY);
+        } catch {
+          return null;
         }
-        const row = [rest[0]];
-        let score = worstAspect(row, side);
-        while (rest.length > row.length) {
-          const candidate = row.concat(rest[row.length]);
-          const nextScore = worstAspect(candidate, side);
-          if (nextScore > score) break;
-          row.push(rest[row.length]);
-          score = nextScore;
-        }
-        const rowArea = row.reduce((sum, entry) => sum + entry.area, 0);
-        const thickness = rowArea / side;
-        let offset = 0;
-        if (rect.w >= rect.h) {
-          for (const entry of row) {
-            const height = (entry.area / rowArea) * rect.h;
-            placed.push({ ...entry, x: rect.x, y: rect.y + offset, w: thickness, h: height });
-            offset += height;
-          }
-          rect = { x: rect.x + thickness, y: rect.y, w: rect.w - thickness, h: rect.h };
-        } else {
-          for (const entry of row) {
-            const width = (entry.area / rowArea) * rect.w;
-            placed.push({ ...entry, x: rect.x + offset, y: rect.y, w: width, h: thickness });
-            offset += width;
-          }
-          rect = { x: rect.x, y: rect.y + thickness, w: rect.w, h: rect.h - thickness };
-        }
-        rest = rest.slice(row.length);
-      }
-      return placed;
-    }
-
-    function SkillMap(props) {
-      const { groups, busy, onEdit } = props;
-      const colors = props.colors ?? new Map();
-      const colorFor = (group) => colors.get(group.key) ?? mapColor(0);
-      const entries = [];
-      groups.forEach((group) => {
-        const color = colorFor(group);
-        for (const skill of group.skills) entries.push({ skill, color, weight: skillWeight(skill) });
+      }, []);
+      const [compact, setCompact] = useState(() => {
+        if (hasTouchPointer()) return true;
+        if (query) return Boolean(query.matches);
+        return (window.innerWidth || 0) <= 640;
       });
-      const layout = squarifySkills(entries);
+      useEffect(() => {
+        if (!query) return undefined;
+        const onChange = (event) => setCompact(Boolean(event.matches));
+        if (typeof query.addEventListener === 'function') query.addEventListener('change', onChange);
+        else if (typeof query.addListener === 'function') query.addListener(onChange);
+        return () => {
+          if (typeof query.removeEventListener === 'function') query.removeEventListener('change', onChange);
+          else if (typeof query.removeListener === 'function') query.removeListener(onChange);
+        };
+      }, [query]);
+      return compact;
+    }
+
+    function rootLabelFor(skill, rootLabels) {
+      if (!skill.root) return t('unknownRoot');
+      return (rootLabels && rootLabels.get(skill.root)) || skill.root;
+    }
+
+    /**
+     * Map tiles always show both invocation surfaces so the mute state is
+     * visible without hovering; the invalid marker joins them when needed.
+     */
+    function MapBadges(props) {
+      const { skill } = props;
+      return h(
+        React.Fragment,
+        null,
+        h(Badge, { key: 'model', muted: !skill.modelInvocable }, t('modelSurface')),
+        h(Badge, { key: 'user', muted: !skill.userInvocable }, t('userSurface')),
+        skill.valid ? null : h(Badge, { key: 'invalid', warn: true }, t('invalid')),
+      );
+    }
+
+    function mapDetailRows(skill, rootLabels) {
+      return [
+        skill.files + ' ' + t('files') + ' · ' + formatBytes(skill.bytes),
+        rootLabelFor(skill, rootLabels),
+        t('categoryLabel') + ' · ' + displayCategory(skill.category),
+        t('authorLabel') + ' · ' + displayAuthor(skill.author),
+      ];
+    }
+
+    /**
+     * Equal-area status board. Tiles sit in a responsive CSS grid per group.
+     * The desktop overlay is positioned from measured viewport space; the
+     * compact layout replaces it with a sticky details strip.
+     */
+    function SkillMap(props) {
+      const { groups, busy, onEdit, rootLabels } = props;
+      const compact = useCompactMap();
+      const [hovered, setHovered] = useState(null);
+      const [focused, setFocused] = useState(null);
+      const [selected, setSelected] = useState(null);
+      const [placement, setPlacement] = useState(null);
+      const tileRefs = useRef(new Map());
+      const popoverRef = useRef(null);
+
+      const skills = useMemo(() => groups.flatMap((group) => group.skills), [groups]);
+      const byName = useMemo(() => new Map(skills.map((skill) => [skill.name, skill])), [skills]);
+      const activeName = compact ? null : (hovered ?? focused);
+      const activeSkill = activeName ? byName.get(activeName) ?? null : null;
+      const selectedSkill = compact && selected ? byName.get(selected) ?? null : null;
+
+      const statusCounts = useMemo(() => {
+        const next = { invalid: 0, disabled: 0, enabled: 0 };
+        for (const skill of skills) next[mapStatus(skill)] += 1;
+        return next;
+      }, [skills]);
+
+      // Measure after commit, so the fixed overlay flips above the tile and
+      // clamps inside the viewport instead of guessing from the grid.
+      useLayoutEffect(() => {
+        if (!activeSkill) {
+          setPlacement(null);
+          return;
+        }
+        const tile = tileRefs.current.get(activeSkill.name);
+        const popover = popoverRef.current;
+        if (!tile || !popover) return;
+        const anchor = tile.getBoundingClientRect();
+        const size = popover.getBoundingClientRect();
+        const width = size.width || 260;
+        const height = size.height || 140;
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 1024;
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 768;
+        const margin = 8;
+        const gap = 8;
+        const maxLeft = Math.max(margin, viewportWidth - width - margin);
+        const left = Math.min(Math.max(margin, anchor.left), maxLeft);
+        const belowTop = anchor.bottom + gap;
+        const aboveTop = anchor.top - height - gap;
+        const fitsBelow = belowTop + height <= viewportHeight - margin;
+        const fitsAbove = aboveTop >= margin;
+        const side = !fitsBelow && fitsAbove ? 'above' : 'below';
+        const top =
+          side === 'above'
+            ? aboveTop
+            : Math.min(belowTop, Math.max(margin, viewportHeight - height - margin));
+        setPlacement({ side, left, top });
+      }, [activeSkill]);
+
+      const tileRef = (name) => (node) => {
+        if (node) tileRefs.current.set(name, node);
+        else tileRefs.current.delete(name);
+      };
+
+      const chooseTile = (skill) => {
+        if (!compact) {
+          onEdit(skill);
+          return;
+        }
+        if (selected === skill.name) onEdit(skill);
+        else setSelected(skill.name);
+      };
+
+      const renderTile = (skill) => {
+        const status = mapStatus(skill);
+        const size = formatBytes(skill.bytes);
+        const label = skill.name + ' · ' + t(MAP_STATUS_LABEL[status]) + ' · ' + size;
+        return h(
+          'button',
+          {
+            key: skill.name,
+            type: 'button',
+            className: 'deck-map-tile status-' + status,
+            'data-skill': skill.name,
+            'data-status': status,
+            title: skill.name,
+            'aria-label': label,
+            'aria-pressed': compact ? (selected === skill.name ? 'true' : 'false') : undefined,
+            disabled: busy === skill.name + ':read',
+            ref: tileRef(skill.name),
+            style: { backgroundColor: MAP_STATUS_TINT[status] },
+            onMouseEnter: () => setHovered(skill.name),
+            onMouseLeave: () => setHovered((current) => (current === skill.name ? null : current)),
+            onFocus: () => setFocused(skill.name),
+            onBlur: () => setFocused((current) => (current === skill.name ? null : current)),
+            onClick: () => chooseTile(skill),
+          },
+          h('span', { className: 'deck-map-tile-name', title: skill.name }, skill.name),
+          h('span', { className: 'deck-map-tile-badges' }, h(MapBadges, { skill })),
+          h(
+            'span',
+            { className: 'deck-map-tile-foot' },
+            h('span', {
+              className: 'deck-status-dot',
+              'data-status': status,
+              style: { backgroundColor: MAP_STATUS_SOLID[status] },
+              'aria-hidden': 'true',
+            }),
+            h('span', { className: 'deck-map-size' }, size),
+          ),
+        );
+      };
+
+      const detailRows = activeSkill ? mapDetailRows(activeSkill, rootLabels) : [];
+      const selectedRows = selectedSkill ? mapDetailRows(selectedSkill, rootLabels) : [];
+
+      const popover =
+        !compact && activeSkill
+          ? h(
+              'div',
+              {
+                className: 'deck-map-popover',
+                role: 'tooltip',
+                'data-skill': activeSkill.name,
+                'data-placement': placement ? placement.side : 'below',
+                ref: popoverRef,
+                style: placement
+                  ? { left: placement.left + 'px', top: placement.top + 'px' }
+                  : { left: '0px', top: '0px', visibility: 'hidden' },
+              },
+              h('div', { className: 'deck-map-popover-name' }, activeSkill.name),
+              h(
+                'div',
+                { className: 'deck-map-popover-desc' },
+                activeSkill.description || t('invalid'),
+              ),
+              h(
+                'div',
+                { className: 'deck-map-popover-meta' },
+                detailRows.map((row, index) => h('span', { key: index }, row)),
+              ),
+            )
+          : null;
+
+      const strip = compact
+        ? h(
+            'div',
+            { className: 'deck-map-strip', role: 'region', 'aria-label': t('mapDetails') },
+            selectedSkill
+              ? [
+                  h(
+                    'div',
+                    { key: 'info', className: 'deck-map-strip-info' },
+                    h('span', { className: 'deck-map-strip-name' }, selectedSkill.name),
+                    h(
+                      'span',
+                      { className: 'deck-map-strip-desc' },
+                      selectedSkill.description || t('invalid'),
+                    ),
+                    h('span', { className: 'deck-map-strip-meta' }, selectedRows.join(' · ')),
+                  ),
+                  h(
+                    'button',
+                    {
+                      key: 'edit',
+                      className: 'deck-btn primary',
+                      onClick: () => onEdit(selectedSkill),
+                    },
+                    t('edit'),
+                  ),
+                ]
+              : h('span', { className: 'deck-map-strip-meta' }, t('mapPick')),
+          )
+        : null;
+
       return h(
         'div',
-        { className: 'deck-map' },
-        h(
-          'div',
-          { className: 'deck-map-canvas', role: 'group', 'aria-label': t('mapLabel') },
-          layout.map((entry) => {
-            const skill = entry.skill;
-            const size = formatBytes(skill.bytes);
-            const label = skill.name + ' · ' + size;
-            return h(
-              'button',
-              {
-                key: skill.name,
-                type: 'button',
-                className: 'deck-map-block',
-                'data-skill': skill.name,
-                'aria-label': label,
-                title: label,
-                disabled: busy === skill.name + ':read',
-                style: {
-                  left: entry.x + '%',
-                  top: entry.y + '%',
-                  width: entry.w + '%',
-                  height: entry.h + '%',
-                  backgroundColor: entry.color,
-                },
-                onClick: () => onEdit(skill),
-              },
-              h(
-                'span',
-                { className: 'deck-map-details' },
-                h('span', { className: 'deck-map-name' }, skill.name),
-                h('span', { className: 'deck-map-size' }, size),
-              ),
-            );
-          }),
-        ),
-        h(
-          'div',
-          { className: 'deck-map-legend', role: 'list', 'aria-label': t('mapLegend') },
-          groups.map((group) =>
+        { className: 'deck-map', role: 'group', 'aria-label': t('mapLabel') },
+        groups.map((group) =>
+          h(
+            'section',
+            { key: group.key, className: 'deck-map-section', 'data-group': group.key },
+            h(GroupHead, { group }),
             h(
               'div',
-              { key: group.key, className: 'deck-legend-item', role: 'listitem', 'data-group': group.key },
-              h('span', { className: 'deck-legend-swatch', style: { backgroundColor: colorFor(group) } }),
-              h('span', { className: 'deck-legend-label' }, group.label),
-              h('span', { className: 'deck-legend-count' }, String(group.count)),
+              { className: 'deck-map-grid' },
+              [...group.skills].sort(bySkillName).map(renderTile),
             ),
           ),
         ),
+        h(
+          'div',
+          { className: 'deck-map-legend', role: 'list', 'aria-label': t('mapStatusLegend') },
+          MAP_STATUS_ORDER.map((status) =>
+            h(
+              'div',
+              {
+                key: status,
+                className: 'deck-legend-item',
+                role: 'listitem',
+                'data-status': status,
+              },
+              h('span', {
+                className: 'deck-legend-swatch',
+                'data-status': status,
+                style: { backgroundColor: MAP_STATUS_SOLID[status] },
+              }),
+              h('span', { className: 'deck-legend-label' }, t(MAP_STATUS_LABEL[status])),
+              h('span', { className: 'deck-legend-count' }, String(statusCounts[status])),
+            ),
+          ),
+        ),
+        popover,
+        strip,
       );
     }
 
@@ -1423,18 +1601,6 @@ window.__ModuleLoader__.load({
 
       const groups = useMemo(() => groupSkills(visible, groupBy, rootLabels), [groupBy, rootLabels, visible]);
 
-      // Colors are assigned over the whole deck, not the visible subset, so
-      // filtering a group out and back in never repaints it or steals another
-      // group's color.
-      const fullGroups = useMemo(
-        () => groupSkills(state.skills, groupBy, rootLabels),
-        [groupBy, rootLabels, state.skills],
-      );
-      const groupColors = useMemo(
-        () => new Map(fullGroups.map((group, index) => [group.key, mapColor(index)])),
-        [fullGroups],
-      );
-
       const skillProps = (skill) => ({
         key: skill.name,
         skill,
@@ -1467,7 +1633,7 @@ window.__ModuleLoader__.load({
             : visible.length === 0
               ? h('div', { className: 'deck-empty' }, state.skills.length === 0 ? t('empty') : t('noMatch'))
               : view === 'map'
-                ? h(SkillMap, { groups, busy, onEdit: openEditor, colors: groupColors })
+                ? h(SkillMap, { groups, busy, onEdit: openEditor, rootLabels })
                 : view === 'cards'
                   ? h(SkillCardWall, { groups, cardProps: skillProps })
                   : h(SkillList, { skills: visible, rowProps: skillProps });

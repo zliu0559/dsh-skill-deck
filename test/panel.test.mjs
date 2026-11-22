@@ -203,6 +203,19 @@ await import('../client.js');
 
 const module = captured.factory(() => React);
 const { Panel } = module.components;
+// The client normally injects its stylesheet from apply(); the panel-only
+// tests call apply with a minimal host so the grid rules can be asserted.
+module.apply({
+  effect() {},
+  slots: {
+    inject(_name, callback) {
+      callback();
+    },
+    register() {
+      return () => {};
+    },
+  },
+});
 const container = document.getElementById('root');
 const root = createRoot(container);
 
@@ -264,17 +277,24 @@ async function pick(select, value) {
   await settle();
 }
 
-function mapBlocks(scope = container) {
-  return [...scope.querySelectorAll('.deck-map-block')];
+function buttonInScope(scope, text) {
+  return [...scope.querySelectorAll('button')].find((node) => node.textContent?.trim() === text);
 }
 
-function mapBlockFor(name, scope = container) {
-  return mapBlocks(scope).find((block) => block.dataset.skill === name);
+function mapTiles(scope = container) {
+  return [...scope.querySelectorAll('.deck-map-tile')];
 }
 
-function blockArea(block) {
-  assert.ok(block, 'map block exists');
-  return parseFloat(block.style.width) * parseFloat(block.style.height);
+function mapTileFor(name, scope = container) {
+  return mapTiles(scope).find((tile) => tile.dataset.skill === name);
+}
+
+function mapSections(scope = container) {
+  return [...scope.querySelectorAll('.deck-map-section')].map((section) => ({
+    title: section.querySelector('.deck-group-title')?.textContent?.trim(),
+    count: section.querySelector('.deck-group-count')?.textContent?.trim(),
+    tiles: [...section.querySelectorAll('.deck-map-tile')].map((tile) => tile.dataset.skill),
+  }));
 }
 
 function legendEntries(scope = container) {
@@ -282,7 +302,104 @@ function legendEntries(scope = container) {
     label: item.querySelector('.deck-legend-label')?.textContent?.trim(),
     count: item.querySelector('.deck-legend-count')?.textContent?.trim(),
     color: item.querySelector('.deck-legend-swatch')?.style.backgroundColor,
+    status: item.dataset.status,
   }));
+}
+
+function statusLegend(scope = container) {
+  return legendEntries(scope).map((entry) => [entry.label, entry.count]);
+}
+
+async function hover(node) {
+  assert.ok(node, 'hover target exists');
+  await act(async () => {
+    node.dispatchEvent(
+      new dom.window.MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body }),
+    );
+  });
+  await settle();
+}
+
+async function unhover(node) {
+  assert.ok(node, 'hover target exists');
+  await act(async () => {
+    node.dispatchEvent(
+      new dom.window.MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }),
+    );
+  });
+  await settle();
+}
+
+async function focusNode(node) {
+  assert.ok(node, 'focus target exists');
+  await act(async () => {
+    node.focus();
+  });
+  await settle();
+}
+
+async function blurActive() {
+  await act(async () => {
+    document.activeElement?.blur();
+  });
+  await settle();
+}
+
+/**
+ * jsdom has no layout engine, so the map overlay's measurement is exercised by
+ * giving only map tiles and the popover a viewport box. Everything else keeps
+ * the real (all-zero) rect.
+ */
+function stubMapGeometry(tiles, popover = { width: 260, height: 140 }) {
+  const proto = dom.window.HTMLElement.prototype;
+  const original = proto.getBoundingClientRect;
+  const box = (left, top, width, height) => ({
+    left,
+    top,
+    width,
+    height,
+    right: left + width,
+    bottom: top + height,
+    x: left,
+    y: top,
+    toJSON() {
+      return this;
+    },
+  });
+  proto.getBoundingClientRect = function measuredBox() {
+    if (this.classList?.contains('deck-map-popover')) return box(0, 0, popover.width, popover.height);
+    const rect = this.dataset?.skill ? tiles[this.dataset.skill] : null;
+    if (this.classList?.contains('deck-map-tile') && rect) {
+      return box(rect.left, rect.top, rect.width, rect.height);
+    }
+    return original.call(this);
+  };
+  return () => {
+    proto.getBoundingClientRect = original;
+  };
+}
+
+/**
+ * Pretend the viewport is narrow or the pointer is coarse. The map reads the
+ * media query once per mount, so stubs must be installed before rendering.
+ */
+function stubCompactLayout() {
+  const original = dom.window.matchMedia;
+  dom.window.matchMedia = () => ({
+    matches: true,
+    media: '(max-width: 640px), (pointer: coarse)',
+    onchange: null,
+    addEventListener() {},
+    removeEventListener() {},
+    addListener() {},
+    removeListener() {},
+    dispatchEvent() {
+      return false;
+    },
+  });
+  return () => {
+    dom.window.matchMedia = original;
+  };
 }
 
 test('panel loads skills and renders the row', async () => {
@@ -697,8 +814,9 @@ test('the view and grouping survive a remount', async () => {
   await click(buttonByText('Cards'));
 });
 
-test('the Map view renders every visible skill as an accessible block', async () => {
+test('the Map view renders grouped equal-area tiles with name, badges, size and full titles', async () => {
   profile = JSON.parse(JSON.stringify(baseProfile));
+  calls.length = 0;
   await click(buttonByText('Refresh'));
   await pick(container.querySelector('select.deck-groupby'), 'category');
   assert.ok(buttonByText('Map'), 'map view control');
@@ -709,242 +827,376 @@ test('the Map view renders every visible skill as an accessible block', async ()
   assert.equal(buttonByText('Cards')?.getAttribute('aria-pressed'), 'false');
   assert.equal(container.querySelectorAll('.deck-row').length, 0, 'list is replaced by the map');
   assert.equal(container.querySelectorAll('.deck-card').length, 0, 'cards are replaced by the map');
-  assert.ok(container.querySelector('.deck-map'), 'map rendered');
+  assert.ok(container.querySelector('.deck-map-grid'), 'responsive grid rendered');
+  assert.equal(container.querySelector('.deck-map-canvas'), null, 'the treemap canvas is gone');
 
-  const blocks = mapBlocks();
-  assert.deepEqual(
-    blocks.map((block) => block.dataset.skill).sort(),
-    ['demo', 'docs-skill', 'lint-skill', 'review-skill'],
+  const css = document.querySelector('style[data-plugin-css="dsh-skill-deck/panel.css"]')?.textContent ?? '';
+  assert.match(css, /grid-template-columns:\s*repeat\(auto-fill, minmax\(150px, 1fr\)\)/);
+  assert.match(css, /\.deck-map-grid\s*\{[^}]*gap:\s*8px/);
+  assert.match(css, /\.deck-map-tile\s*\{[^}]*aspect-ratio:\s*3\s*\/\s*2/);
+
+  assert.deepEqual(mapSections(), [
+    { title: 'documentation', count: '2', tiles: ['docs-skill', 'lint-skill'] },
+    { title: 'review', count: '1', tiles: ['review-skill'] },
+    { title: 'Uncategorized', count: '1', tiles: ['demo'] },
+  ]);
+
+  const tiles = mapTiles();
+  assert.equal(tiles.length, 4);
+  for (const tile of tiles) {
+    assert.equal(tile.tagName, 'BUTTON', 'every tile is a button');
+    assert.ok(tile.classList.contains('deck-map-tile'));
+    assert.equal(tile.style.width, '', 'tiles get their size from the grid, not inline geometry');
+    assert.equal(tile.style.height, '');
+    assert.equal(tile.style.left, '');
+    assert.equal(tile.style.top, '');
+    assert.equal(tile.getAttribute('title'), tile.dataset.skill, 'the full name is a native hover title');
+    assert.match(tile.getAttribute('aria-label') || '', new RegExp(tile.dataset.skill));
+    assert.match(tile.getAttribute('aria-label') || '', /\d+ B/);
+  }
+
+  const demoTile = mapTileFor('demo');
+  assert.match(demoTile.textContent, /demo/);
+  assert.match(demoTile.textContent, /Model/);
+  assert.match(demoTile.textContent, /Slash/);
+  assert.match(demoTile.textContent, /64 B/);
+  const docsTile = mapTileFor('docs-skill');
+  assert.match(docsTile.textContent, /Model/);
+  const docsSlash = [...docsTile.querySelectorAll('.deck-badge')].find(
+    (badge) => badge.textContent === 'Slash',
   );
-  for (const block of blocks) {
-    assert.equal(block.tagName, 'BUTTON', 'every map block is a button');
-    const name = block.dataset.skill;
-    const label = block.getAttribute('aria-label') || '';
-    assert.match(label, new RegExp(name), 'accessible name carries the skill name');
-    assert.match(label, /\d+ B/, 'accessible name carries the size');
-    const details = block.querySelector('.deck-map-details');
-    assert.ok(details, 'details element rendered');
-    assert.match(details.textContent, new RegExp(name));
-    assert.match(details.textContent, /\d+ B/);
-  }
-  assert.match(mapBlockFor('demo').getAttribute('aria-label'), /64 B/);
-  assert.match(mapBlockFor('docs-skill').getAttribute('aria-label'), /128 B/);
+  assert.ok(docsSlash, 'both surface badges are always shown');
+  assert.ok(docsSlash.classList.contains('muted'), 'the inactive surface is muted');
+  assert.match(docsTile.textContent, /128 B/);
+  assert.match(mapTileFor('review-skill').textContent, /Needs fixing/, 'the invalid marker stays on the tile');
+
+  assert.deepEqual(statusLegend(), [
+    ['Needs fixing', '1'],
+    ['Disabled', '0'],
+    ['Enabled', '3'],
+  ]);
 });
 
-test('map block area is proportional to bundle bytes', async () => {
-  const bytesByName = { demo: 64, 'docs-skill': 128, 'lint-skill': 32, 'review-skill': 96 };
-  const totalBytes = Object.values(bytesByName).reduce((sum, bytes) => sum + bytes, 0);
-  for (const [name, bytes] of Object.entries(bytesByName)) {
-    const share = blockArea(mapBlockFor(name)) / 10000;
-    assert.ok(
-      Math.abs(share - bytes / totalBytes) < 0.001,
-      name + ' covers ' + share.toFixed(4) + ' of the map, expected ' + (bytes / totalBytes).toFixed(4),
-    );
-  }
-});
-
-test('map blocks tile the canvas without overlaps or gaps', async () => {
-  const boxes = mapBlocks().map((block) => ({
-    name: block.dataset.skill,
-    left: parseFloat(block.style.left),
-    top: parseFloat(block.style.top),
-    width: parseFloat(block.style.width),
-    height: parseFloat(block.style.height),
-  }));
-  let covered = 0;
-  for (const box of boxes) {
-    assert.ok(box.left >= -1e-6 && box.top >= -1e-6, box.name + ' starts inside the canvas');
-    assert.ok(box.left + box.width <= 100 + 1e-6, box.name + ' stays within the canvas width');
-    assert.ok(box.top + box.height <= 100 + 1e-6, box.name + ' stays within the canvas height');
-    covered += box.width * box.height;
-  }
-  assert.ok(Math.abs(covered - 10000) < 0.01, 'blocks cover the whole canvas');
-  for (let i = 0; i < boxes.length; i += 1) {
-    for (let j = i + 1; j < boxes.length; j += 1) {
-      const a = boxes[i];
-      const b = boxes[j];
-      const overlapWidth = Math.min(a.left + a.width, b.left + b.width) - Math.max(a.left, b.left);
-      const overlapHeight = Math.min(a.top + a.height, b.top + b.height) - Math.max(a.top, b.top);
-      const overlap = Math.max(0, overlapWidth) * Math.max(0, overlapHeight);
-      assert.ok(overlap < 1e-6, a.name + ' and ' + b.name + ' do not overlap');
-    }
-  }
-});
-
-test('map blocks fall back from bytes to file count and then to equal area', async () => {
+test('map sections order by count then name, keep fallbacks last, and sort tiles by name', async () => {
   profile = {
     ...JSON.parse(JSON.stringify(baseProfile)),
     skills: [
-      { ...baseProfile.skills[0], name: 'bytes-skill', bytes: 50, files: 1 },
-      { ...baseProfile.skills[0], name: 'files-skill', bytes: 0, files: 3 },
-      { ...baseProfile.skills[0], name: 'empty-skill', bytes: 0, files: 0 },
+      { ...baseProfile.skills[1], name: 'zeta-skill', category: 'shared', manualCategory: 'shared' },
+      { ...baseProfile.skills[1], name: 'alpha-skill', category: 'shared', manualCategory: 'shared' },
+      { ...baseProfile.skills[1], name: 'solo-skill', category: 'alpha-cat', manualCategory: 'alpha-cat' },
+      { ...baseProfile.skills[0], name: 'loose-skill', category: 'Uncategorized', manualCategory: '' },
     ],
-    totals: { ...baseProfile.totals, skills: 3 },
+    totals: { ...baseProfile.totals, skills: 4 },
   };
   await click(buttonByText('Refresh'));
-  assert.equal(mapBlocks().length, 3, 'fallback deck rendered');
-
-  const totalWeight = 50 + 3 + 1;
-  const expected = { 'bytes-skill': 50, 'files-skill': 3, 'empty-skill': 1 };
-  for (const [name, weight] of Object.entries(expected)) {
-    const share = blockArea(mapBlockFor(name)) / 10000;
-    assert.ok(
-      Math.abs(share - weight / totalWeight) < 0.001,
-      name + ' covers ' + share.toFixed(4) + ', expected ' + (weight / totalWeight).toFixed(4),
-    );
-  }
-  assert.ok(blockArea(mapBlockFor('files-skill')) > blockArea(mapBlockFor('empty-skill')));
+  assert.deepEqual(mapSections(), [
+    { title: 'shared', count: '2', tiles: ['alpha-skill', 'zeta-skill'] },
+    { title: 'alpha-cat', count: '1', tiles: ['solo-skill'] },
+    { title: 'Uncategorized', count: '1', tiles: ['loose-skill'] },
+  ]);
 
   profile = JSON.parse(JSON.stringify(baseProfile));
   await click(buttonByText('Refresh'));
-});
-
-test('clicking a map block opens the editor and the map exposes no destructive actions', async () => {
-  const blocks = mapBlocks();
-  assert.equal(container.querySelectorAll('.deck-map button').length, blocks.length, 'only blocks are buttons');
-  assert.equal(container.querySelector('.deck-map .deck-btn.danger'), null, 'no destructive control');
-  assert.doesNotMatch(container.querySelector('.deck-map').textContent, /Remove|Duplicate|Tag|Open folder/);
-
-  calls.length = 0;
-  await click(mapBlockFor('demo'));
-  const read = calls.find((call) => call.path === '/dsh-skill-deck/read');
-  assert.deepEqual(read?.body, { name: 'demo' }, 'the map block reads its skill');
-  assert.ok(container.querySelector('textarea'), 'editor opened from the map');
-  await click(buttonByText('Cancel'));
-  assert.equal(container.querySelector('textarea'), null, 'editor closed');
-});
-
-test('map colors follow the grouping dimension and a legend decodes them', async () => {
+  const groupBy = container.querySelector('select.deck-groupby');
+  await pick(groupBy, 'author');
   assert.deepEqual(
-    legendEntries().map((entry) => [entry.label, entry.count]),
-    [
-      ['documentation', '2'],
-      ['review', '1'],
-      ['Uncategorized', '1'],
-    ],
-  );
-  const colorFor = (label) => legendEntries().find((entry) => entry.label === label)?.color;
-  assert.ok(colorFor('documentation'), 'legend swatch has a color');
-  assert.equal(new Set([colorFor('documentation'), colorFor('review'), colorFor('Uncategorized')]).size, 3);
-  assert.equal(mapBlockFor('docs-skill').style.backgroundColor, colorFor('documentation'));
-  assert.equal(mapBlockFor('lint-skill').style.backgroundColor, colorFor('documentation'));
-  assert.equal(mapBlockFor('review-skill').style.backgroundColor, colorFor('review'));
-  assert.equal(mapBlockFor('demo').style.backgroundColor, colorFor('Uncategorized'));
-
-  await pick(container.querySelector('select.deck-groupby'), 'author');
-  assert.deepEqual(
-    legendEntries().map((entry) => [entry.label, entry.count]),
+    mapSections().map((section) => [section.title, section.count]),
     [
       ['Docs Writer', '2'],
       ['Dex Horthy', '1'],
       ['Unknown', '1'],
     ],
   );
-  assert.equal(
-    mapBlockFor('demo').style.backgroundColor,
-    legendEntries().find((entry) => entry.label === 'Unknown')?.color,
-  );
-  assert.equal(
-    mapBlockFor('docs-skill').style.backgroundColor,
-    legendEntries().find((entry) => entry.label === 'Docs Writer')?.color,
-  );
-
-  await pick(container.querySelector('select.deck-groupby'), 'root');
+  await pick(groupBy, 'root');
   assert.deepEqual(
-    legendEntries().map((entry) => [entry.label, entry.count]),
+    mapSections().map((section) => [section.title, section.count]),
     [
       ['~/.agents/skills', '2'],
       ['~/.dsh/skills', '2'],
     ],
   );
-  await pick(container.querySelector('select.deck-groupby'), 'category');
+  await pick(groupBy, 'category');
 });
 
-test('map colors stay unique and stable for more than twelve groups', async () => {
-  const skills = Array.from({ length: 14 }, (_, index) => ({
-    ...baseProfile.skills[0],
-    name: 'group-skill-' + String(index).padStart(2, '0'),
-    category: 'category-' + index,
-    manualCategory: 'category-' + index,
-    author: 'author-' + index,
-    manualAuthor: 'author-' + index,
-  }));
-  profile = { ...JSON.parse(JSON.stringify(baseProfile)), skills, totals: { ...baseProfile.totals, skills: skills.length } };
+test('map tiles encode invalid > disabled > enabled status with tints, dots and visible counts', async () => {
+  profile = {
+    ...JSON.parse(JSON.stringify(baseProfile)),
+    skills: [
+      {
+        ...baseProfile.skills[0],
+        name: 'broken-disabled',
+        category: 'status',
+        manualCategory: 'status',
+        valid: false,
+        error: 'bad frontmatter',
+        modelInvocable: false,
+        userInvocable: false,
+      },
+      {
+        ...baseProfile.skills[0],
+        name: 'broken-enabled',
+        category: 'status',
+        manualCategory: 'status',
+        valid: false,
+        error: 'bad frontmatter',
+        modelInvocable: true,
+        userInvocable: true,
+      },
+      {
+        ...baseProfile.skills[0],
+        name: 'off-skill',
+        category: 'status',
+        manualCategory: 'status',
+        valid: true,
+        error: null,
+        modelInvocable: false,
+        userInvocable: false,
+      },
+      {
+        ...baseProfile.skills[0],
+        name: 'on-skill',
+        category: 'status',
+        manualCategory: 'status',
+        valid: true,
+        error: null,
+        modelInvocable: true,
+        userInvocable: false,
+      },
+    ],
+    totals: { skills: 4, modelInvocable: 2, userInvocable: 1, invalid: 2 },
+  };
   await click(buttonByText('Refresh'));
-  assert.equal(mapBlocks().length, 14);
 
-  const fullLegend = legendEntries();
-  assert.equal(fullLegend.length, 14);
-  assert.equal(new Set(fullLegend.map((entry) => entry.color)).size, 14, 'every group has its own color');
-  const colorByLabel = new Map(fullLegend.map((entry) => [entry.label, entry.color]));
-
-  const search = container.querySelector('input[type="search"]');
-  await act(async () => {
-    setValue(search, 'group-skill-03');
-  });
-  await settle();
-  assert.equal(mapBlocks().length, 1);
-  assert.equal(
-    mapBlockFor('group-skill-03').style.backgroundColor,
-    colorByLabel.get('category-3'),
-    'filtering does not reassign a group color',
-  );
+  assert.deepEqual(statusLegend(), [
+    ['Needs fixing', '2'],
+    ['Disabled', '1'],
+    ['Enabled', '1'],
+  ]);
   assert.deepEqual(
-    legendEntries().map((entry) => [entry.label, entry.count]),
-    [['category-3', '1']],
+    legendEntries().map((entry) => entry.status),
+    ['invalid', 'disabled', 'enabled'],
+    'the legend always exposes exactly three statuses',
   );
 
-  await act(async () => {
-    setValue(search, '');
-  });
-  await settle();
+  const expected = {
+    'broken-disabled': 'invalid',
+    'broken-enabled': 'invalid',
+    'off-skill': 'disabled',
+    'on-skill': 'enabled',
+  };
+  for (const [name, status] of Object.entries(expected)) {
+    const tile = mapTileFor(name);
+    assert.equal(tile.dataset.status, status, name + ' status');
+    assert.ok(tile.classList.contains('status-' + status), name + ' status class');
+    const dot = tile.querySelector('.deck-status-dot');
+    assert.ok(dot, name + ' has a status dot');
+    assert.equal(dot.dataset.status, status);
+    assert.equal(
+      dot.style.backgroundColor,
+      legendEntries().find((entry) => entry.status === status)?.color,
+      name + ' dot matches its legend swatch',
+    );
+  }
+  assert.match(mapTileFor('broken-disabled').textContent, /Needs fixing/, 'invalid wins over disabled');
+
+  const tints = ['broken-enabled', 'off-skill', 'on-skill'].map(
+    (name) => mapTileFor(name).style.backgroundColor,
+  );
+  assert.equal(new Set(tints).size, 3, 'each status has its own tint');
+  for (const tile of mapTiles()) {
+    const dot = tile.querySelector('.deck-status-dot');
+    assert.notEqual(tile.style.backgroundColor, dot.style.backgroundColor, 'the tint and the solid dot differ');
+  }
+
   profile = JSON.parse(JSON.stringify(baseProfile));
   await click(buttonByText('Refresh'));
-  assert.equal(mapBlocks().length, 4);
 });
 
-test('search and the status filter narrow the map and its legend', async () => {
+test('search and the status filter narrow map sections and the legend before grouping', async () => {
   const search = container.querySelector('input[type="search"]');
   await act(async () => {
     setValue(search, 'demo');
   });
   await settle();
-  assert.deepEqual(mapBlocks().map((block) => block.dataset.skill), ['demo']);
-  assert.deepEqual(
-    legendEntries().map((entry) => [entry.label, entry.count]),
-    [['Uncategorized', '1']],
-  );
+  assert.deepEqual(mapSections(), [{ title: 'Uncategorized', count: '1', tiles: ['demo'] }]);
+  assert.deepEqual(statusLegend(), [
+    ['Needs fixing', '0'],
+    ['Disabled', '0'],
+    ['Enabled', '1'],
+  ]);
 
   await act(async () => {
     setValue(search, '');
   });
   await settle();
-  assert.equal(mapBlocks().length, 4, 'clearing the search restores every block');
 
   await pick(container.querySelector('select.deck-filter'), 'invalid');
-  assert.deepEqual(mapBlocks().map((block) => block.dataset.skill), ['review-skill']);
-  assert.deepEqual(
-    legendEntries().map((entry) => [entry.label, entry.count]),
-    [['review', '1']],
-  );
+  assert.deepEqual(mapSections(), [{ title: 'review', count: '1', tiles: ['review-skill'] }]);
+  assert.deepEqual(statusLegend(), [
+    ['Needs fixing', '1'],
+    ['Disabled', '0'],
+    ['Enabled', '0'],
+  ]);
   await pick(container.querySelector('select.deck-filter'), 'all');
-  assert.equal(mapBlocks().length, 4);
+  assert.equal(mapTiles().length, 4, 'clearing the filter restores every tile');
+  assert.deepEqual(statusLegend(), [
+    ['Needs fixing', '1'],
+    ['Disabled', '0'],
+    ['Enabled', '3'],
+  ]);
 });
 
-test('the Map view keeps the no-match and empty states', async () => {
+test('a desktop tile click opens the editor and the map exposes no destructive actions', async () => {
+  const tiles = mapTiles();
+  assert.equal(
+    container.querySelectorAll('.deck-map button').length,
+    tiles.length,
+    'only the tiles are buttons on desktop',
+  );
+  assert.equal(container.querySelector('.deck-map .deck-btn.danger'), null, 'no destructive control');
+  assert.equal(container.querySelector('.deck-map-strip'), null, 'no details strip on desktop');
+  assert.doesNotMatch(
+    container.querySelector('.deck-map').textContent,
+    /Remove|Duplicate|Tag|Open folder/,
+    'the map offers no row actions',
+  );
+
+  calls.length = 0;
+  await click(mapTileFor('demo'));
+  const read = calls.find((call) => call.path === '/dsh-skill-deck/read');
+  assert.deepEqual(read?.body, { name: 'demo' }, 'the map tile reads its skill');
+  assert.ok(container.querySelector('textarea'), 'editor opened from the map');
+  await click(buttonByText('Cancel'));
+  assert.equal(container.querySelector('textarea'), null, 'editor closed');
+});
+
+test('the map overlay shows measured details on hover and focus, flipping and clamping', async () => {
+  const restoreGeometry = stubMapGeometry({
+    demo: { left: 100, top: 100, width: 150, height: 100 },
+    'docs-skill': { left: 900, top: 100, width: 150, height: 100 },
+    'lint-skill': { left: 100, top: 700, width: 150, height: 100 },
+  });
+  try {
+    assert.equal(container.querySelector('.deck-map-popover'), null, 'no overlay before hover');
+
+    await hover(mapTileFor('demo'));
+    let popover = container.querySelector('.deck-map-popover');
+    assert.ok(popover, 'hover shows the overlay');
+    assert.equal(popover.dataset.placement, 'below');
+    assert.equal(popover.style.top, '208px', 'anchored just below the measured tile');
+    assert.equal(popover.style.left, '100px');
+    assert.match(popover.textContent, /demo/);
+    assert.match(popover.textContent, /A demo skill\./);
+    assert.match(popover.textContent, /1 files · 64 B/);
+    assert.match(popover.textContent, /~\/\.dsh\/skills/);
+    assert.match(popover.textContent, /Category · Uncategorized/);
+    assert.match(popover.textContent, /Author · Unknown/);
+
+    await unhover(mapTileFor('demo'));
+    assert.equal(container.querySelector('.deck-map-popover'), null, 'leaving hides the overlay');
+
+    await focusNode(mapTileFor('docs-skill'));
+    popover = container.querySelector('.deck-map-popover');
+    assert.ok(popover, 'focus shows the overlay');
+    assert.equal(popover.style.left, '756px', 'clamped to the right viewport edge');
+    assert.equal(popover.style.top, '208px');
+    assert.match(popover.textContent, /128 B/);
+    await blurActive();
+    assert.equal(container.querySelector('.deck-map-popover'), null, 'blur hides the overlay');
+
+    await focusNode(mapTileFor('lint-skill'));
+    popover = container.querySelector('.deck-map-popover');
+    assert.ok(popover, 'focus shows the overlay');
+    assert.equal(popover.dataset.placement, 'above', 'flips above when there is no room below');
+    assert.equal(popover.style.top, '552px');
+    await blurActive();
+  } finally {
+    restoreGeometry();
+  }
+});
+
+test('narrow or touch layouts select on the first tap and open on Edit or a second tap', async () => {
+  const restoreMatchMedia = stubCompactLayout();
+  const otherContainer = document.createElement('div');
+  document.body.appendChild(otherContainer);
+  const otherRoot = createRoot(otherContainer);
+  try {
+    await act(async () => {
+      otherRoot.render(React.createElement(Panel));
+    });
+    await settle();
+    await settle();
+
+    const mapButton = buttonInScope(otherContainer, 'Map');
+    assert.ok(mapButton, 'map view control');
+    if (mapButton.getAttribute('aria-pressed') !== 'true') await click(mapButton);
+    assert.ok(otherContainer.querySelector('.deck-map'), 'the map is rendered in the compact layout');
+
+    const strip = otherContainer.querySelector('.deck-map-strip');
+    assert.ok(strip, 'a details strip replaces the overlay');
+    assert.match(strip.textContent, /Tap a skill to see details/);
+
+    await hover(mapTileFor('demo', otherContainer));
+    assert.equal(otherContainer.querySelector('.deck-map-popover'), null, 'hover does not open an overlay');
+
+    calls.length = 0;
+    await click(mapTileFor('demo', otherContainer));
+    assert.equal(otherContainer.querySelector('textarea'), null, 'the first tap only selects');
+    assert.match(otherContainer.querySelector('.deck-map-strip').textContent, /demo/);
+    assert.match(otherContainer.querySelector('.deck-map-strip').textContent, /A demo skill\./);
+    assert.match(otherContainer.querySelector('.deck-map-strip').textContent, /1 files · 64 B/);
+    assert.ok(
+      !calls.some((call) => call.path === '/dsh-skill-deck/read'),
+      'the first tap does not read the file',
+    );
+
+    const edit = buttonInScope(otherContainer.querySelector('.deck-map-strip'), 'Edit');
+    assert.ok(edit, 'the strip exposes an Edit action');
+    await click(edit);
+    assert.deepEqual(calls.find((call) => call.path === '/dsh-skill-deck/read')?.body, { name: 'demo' });
+    assert.ok(otherContainer.querySelector('textarea'), 'Edit opens the editor');
+    await click(buttonInScope(otherContainer, 'Cancel'));
+    assert.equal(otherContainer.querySelector('textarea'), null);
+
+    await click(mapTileFor('docs-skill', otherContainer));
+    assert.match(otherContainer.querySelector('.deck-map-strip').textContent, /docs-skill/);
+    assert.equal(otherContainer.querySelector('textarea'), null, 'selecting another tile still only selects');
+    calls.length = 0;
+    await click(mapTileFor('docs-skill', otherContainer));
+    assert.deepEqual(calls.find((call) => call.path === '/dsh-skill-deck/read')?.body, {
+      name: 'docs-skill',
+    });
+    assert.ok(otherContainer.querySelector('textarea'), 'a second tap opens the editor');
+    await click(buttonInScope(otherContainer, 'Cancel'));
+  } finally {
+    await act(async () => {
+      otherRoot.unmount();
+    });
+    otherContainer.remove();
+    restoreMatchMedia();
+  }
+});
+
+test('the Map view hides the grid and legend when nothing matches', async () => {
   const search = container.querySelector('input[type="search"]');
   await act(async () => {
     setValue(search, 'nope');
   });
   await settle();
-  assert.equal(mapBlocks().length, 0);
+  assert.equal(container.querySelector('.deck-map'), null);
+  assert.equal(mapTiles().length, 0);
   assert.equal(legendEntries().length, 0);
   assert.match(container.textContent, /No matching skills/);
+
   await act(async () => {
     setValue(search, '');
   });
   await settle();
+  assert.equal(mapTiles().length, 4, 'clearing the search restores every tile');
+  assert.equal(legendEntries().length, 3, 'the three-item status legend returns');
+});
 
+test('the Map view keeps the empty state when the deck has no skills', async () => {
   profile = {
     ...JSON.parse(JSON.stringify(baseProfile)),
     skills: [],
@@ -952,10 +1204,13 @@ test('the Map view keeps the no-match and empty states', async () => {
   };
   await click(buttonByText('Refresh'));
   assert.match(container.textContent, /No skills yet/);
-  assert.equal(mapBlocks().length, 0);
+  assert.equal(container.querySelector('.deck-map'), null);
+  assert.equal(mapTiles().length, 0);
+  assert.equal(legendEntries().length, 0);
 
   profile = JSON.parse(JSON.stringify(baseProfile));
   await click(buttonByText('Refresh'));
+  assert.equal(mapTiles().length, 4);
 });
 
 test('the Map view and grouping survive a remount', async () => {
@@ -970,11 +1225,15 @@ test('the Map view and grouping survive a remount', async () => {
   await settle();
   await settle();
   assert.ok(otherContainer.querySelector('.deck-map'), 'map view restored');
-  assert.equal(otherContainer.querySelectorAll('.deck-map-block').length, 4);
+  assert.equal(otherContainer.querySelectorAll('.deck-map-tile').length, 4);
   assert.equal(otherContainer.querySelector('select.deck-groupby').value, 'author');
   assert.deepEqual(
-    [...otherContainer.querySelectorAll('.deck-legend-label')].map((node) => node.textContent.trim()),
+    [...otherContainer.querySelectorAll('.deck-group-title')].map((node) => node.textContent.trim()),
     ['Docs Writer', 'Dex Horthy', 'Unknown'],
+  );
+  assert.deepEqual(
+    [...otherContainer.querySelectorAll('.deck-legend-label')].map((node) => node.textContent.trim()),
+    ['Needs fixing', 'Disabled', 'Enabled'],
   );
   await act(async () => {
     otherRoot.unmount();
