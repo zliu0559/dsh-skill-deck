@@ -8,6 +8,9 @@
   only refusing the save.
 - The search field and filter expose accessible labels; the toast announces
   results to screen readers.
+- Skills behind a symlink or junction are discovered like ordinary directories.
+- A `SKILL.md` that is not valid UTF-8 is reported as needing attention and is
+  refused for editing, instead of being rewritten with replacement characters.
 
 ## 0.1.0 — 2026-11-22
 

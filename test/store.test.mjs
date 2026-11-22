@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -87,4 +87,36 @@ test('refuses unknown or escaping names', async () => {
     () => readSkill('../etc/passwd'),
     (error) => error.status === 404,
   );
+});
+
+test('marks a non-UTF-8 skill as invalid and refuses to edit it', async () => {
+  const dir = join(home, 'skills', 'bad-encoding');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'SKILL.md'), Buffer.from([0xff, 0xfe, 0x00, 0x41]));
+  const { skills } = await listSkills();
+  const bad = skills.find((skill) => skill.name === 'bad-encoding');
+  assert.ok(bad);
+  assert.equal(bad.valid, false);
+  assert.equal(bad.error, 'not valid UTF-8');
+  await assert.rejects(
+    () => readSkill('bad-encoding'),
+    (error) => error.status === 415,
+  );
+});
+
+test('discovers a skill behind a junction', async (t) => {
+  const target = join(home, 'shared', 'linked-skill');
+  mkdirSync(target, { recursive: true });
+  writeFileSync(join(target, 'SKILL.md'), '---\nname: linked-skill\ndescription: Linked.\n---\n', 'utf8');
+  try {
+    symlinkSync(target, join(home, 'skills', 'linked-skill'), 'junction');
+  } catch {
+    t.skip('junctions are unavailable here');
+    return;
+  }
+  const { skills } = await listSkills();
+  const linked = skills.find((skill) => skill.name === 'linked-skill');
+  assert.ok(linked);
+  assert.equal(linked.isBundle, true);
+  assert.equal(linked.description, 'Linked.');
 });

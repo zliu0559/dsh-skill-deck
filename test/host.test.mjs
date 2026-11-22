@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -106,6 +106,48 @@ test('toggle refuses an unknown surface', async () => {
     method: 'POST',
     headers: { 'content-type': 'application/json', host: '127.0.0.1:1' },
     body: JSON.stringify({ name: 'demo', surface: 'bogus', enabled: false }),
+  });
+  assert.equal(result.status, 400);
+});
+
+test('toggle disables the model surface and reports the new skill', async () => {
+  const result = await call('/toggle', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', host: '127.0.0.1:1' },
+    body: JSON.stringify({ name: 'demo', surface: 'model', enabled: false }),
+  });
+  assert.equal(result.status, 200);
+  const payload = JSON.parse(result.body);
+  assert.equal(payload.skill.modelInvocable, false);
+  assert.ok(readFileSync(join(skillDir, 'SKILL.md'), 'utf8').includes('disable-model-invocation: true'));
+});
+
+test('save rejects a stale revision with 409', async () => {
+  const read = await call('/read', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', host: '127.0.0.1:1' },
+    body: JSON.stringify({ name: 'demo' }),
+  });
+  const { content, revision } = JSON.parse(read.body);
+  const first = await call('/save', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', host: '127.0.0.1:1' },
+    body: JSON.stringify({ name: 'demo', content: content + '\nmore\n', revision }),
+  });
+  assert.equal(first.status, 200);
+  const second = await call('/save', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', host: '127.0.0.1:1' },
+    body: JSON.stringify({ name: 'demo', content: content + '\nother\n', revision }),
+  });
+  assert.equal(second.status, 409);
+});
+
+test('delete requires the skill name as confirmation', async () => {
+  const result = await call('/delete', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', host: '127.0.0.1:1' },
+    body: JSON.stringify({ name: 'demo', confirm: 'not-demo' }),
   });
   assert.equal(result.status, 400);
 });

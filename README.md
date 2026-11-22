@@ -61,6 +61,8 @@ Removal moves the bundle to `$DSH_HOME/skills-trash/<timestamp>-<name>/`; flat `
 
 - One level deep, matching DSH discovery: `<root>/<name>/SKILL.md` or `<root>/<name>.md`.
 - Skills larger than 2 MiB are refused for editing.
+- A skill file that is not valid UTF-8 is listed as needing attention and cannot
+  be edited, because writing it back would corrupt the original bytes.
 - Renaming the `name:` field is rejected; the directory name stays the source of truth.
 - The page lists files on disk, not the merged catalog of every provider — a bundled or virtual skill from another plugin is not shown.
 
