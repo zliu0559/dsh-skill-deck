@@ -79,6 +79,10 @@ npm install   # React is a devDependency, used only by the render test
 npm test
 ```
 
+`test/panel.test.mjs` mounts the real panel in jsdom with a mocked backend, so
+typing, toggling, saving and creating are exercised as behaviour rather than as
+markup.
+
 `index.js` is the Host half (routes under `/dsh-skill-deck/*`), `client.js` is the browser module registered through `window.__ModuleLoader__`, and `lib/` holds the filesystem and frontmatter logic shared by the tests.
 
 The Host API is same-origin JSON, mounted through `webServer.register`, and every mutating request re-discovers the skill by name before touching a path, so a request cannot address a file outside the managed roots.
