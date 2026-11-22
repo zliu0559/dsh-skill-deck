@@ -1,0 +1,170 @@
+/**
+ * dsh-skill-deck — Host half.
+ *
+ * Mounts a small same-origin JSON API for the Settings panel: list the skills
+ * under the DSH user roots, read one document, toggle its two invocation
+ * surfaces, save an edited document, move a skill to the trash, and open its
+ * directory in the OS file manager.
+ */
+import {
+  listSkills,
+  readSkill,
+  removeSkill,
+  revealSkill,
+  saveSkill,
+  toggleSkill,
+} from './lib/store.js';
+
+const ROUTE_BASE = '/dsh-skill-deck';
+const BODY_LIMIT_BYTES = 2 * 1024 * 1024;
+
+export const name = 'dsh-skill-deck';
+
+function sendJson(response, status, payload) {
+  const body = JSON.stringify(payload);
+  response.statusCode = status;
+  response.setHeader('content-type', 'application/json; charset=utf-8');
+  response.setHeader('cache-control', 'no-store');
+  response.end(body);
+}
+
+function fail(response, error) {
+  const status = typeof error?.status === 'number' ? error.status : 500;
+  const message = error instanceof Error ? error.message : String(error);
+  if (status >= 500) console.error('[dsh-skill-deck]', error);
+  sendJson(response, status, { ok: false, error: message });
+}
+
+function readBody(request) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    request.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > BODY_LIMIT_BYTES) {
+        reject(Object.assign(new Error('request body is too large'), { status: 413 }));
+        request.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    request.on('error', reject);
+    request.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+  });
+}
+
+async function readJson(request) {
+  const raw = await readBody(request);
+  if (!raw.trim()) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('body must be a JSON object');
+    }
+    return parsed;
+  } catch {
+    throw Object.assign(new Error('request body is not valid JSON'), { status: 400 });
+  }
+}
+
+/**
+ * @param {import('@deepseek-ai/cordis').Context} ctx
+ */
+export function apply(ctx) {
+  const logger = ctx.get('logger');
+  const report = (message) => {
+    if (logger && typeof logger.info === 'function') logger.info('[dsh-skill-deck] ' + message);
+  };
+
+  ctx.inject(['webServer'], (host) => {
+    const webServer = host?.webServer ?? ctx.get('webServer');
+    if (!webServer || typeof webServer.register !== 'function') {
+      report('webServer unavailable; routes not mounted');
+      return;
+    }
+    const disposers = [];
+    const route = (path, handler) => {
+      disposers.push(
+        webServer.register({
+          kind: 'exact',
+          path: ROUTE_BASE + path,
+          handler: (request, response) => {
+            Promise.resolve(handler(request, response)).catch((error) => fail(response, error));
+          },
+        }),
+      );
+    };
+
+    route('/state', async (request, response) => {
+      const { roots, skills } = await listSkills();
+      const totals = {
+        skills: skills.length,
+        modelInvocable: skills.filter((skill) => skill.modelInvocable).length,
+        userInvocable: skills.filter((skill) => skill.userInvocable).length,
+        invalid: skills.filter((skill) => !skill.valid).length,
+      };
+      sendJson(response, 200, { ok: true, roots, skills, totals });
+    });
+
+    route('/read', async (request, response) => {
+      const payload = await readJson(request);
+      const result = await readSkill(String(payload.name ?? ''));
+      sendJson(response, 200, { ok: true, ...result });
+    });
+
+    route('/save', async (request, response) => {
+      const payload = await readJson(request);
+      if (typeof payload.content !== 'string') {
+        throw Object.assign(new Error('content must be a string'), { status: 400 });
+      }
+      const result = await saveSkill({
+        name: String(payload.name ?? ''),
+        content: payload.content,
+        revision: typeof payload.revision === 'string' ? payload.revision : undefined,
+      });
+      sendJson(response, 200, { ok: true, ...result });
+    });
+
+    route('/toggle', async (request, response) => {
+      const payload = await readJson(request);
+      if (payload.surface !== 'model' && payload.surface !== 'user') {
+        throw Object.assign(new Error('surface must be "model" or "user"'), { status: 400 });
+      }
+      if (typeof payload.enabled !== 'boolean') {
+        throw Object.assign(new Error('enabled must be a boolean'), { status: 400 });
+      }
+      const result = await toggleSkill({
+        name: String(payload.name ?? ''),
+        surface: payload.surface,
+        enabled: payload.enabled,
+      });
+      sendJson(response, 200, { ok: true, ...result });
+    });
+
+    route('/delete', async (request, response) => {
+      const payload = await readJson(request);
+      const result = await removeSkill({
+        name: String(payload.name ?? ''),
+        confirm: String(payload.confirm ?? ''),
+      });
+      sendJson(response, 200, { ok: true, ...result });
+    });
+
+    route('/reveal', async (request, response) => {
+      const payload = await readJson(request);
+      const result = await revealSkill(String(payload.name ?? ''));
+      sendJson(response, 200, { ok: true, ...result });
+    });
+
+    report('routes mounted');
+    ctx.effect(() => () => {
+      for (const dispose of disposers) {
+        try {
+          dispose();
+        } catch {
+          /* a route that is already gone is not an error */
+        }
+      }
+    }, 'dsh-skill-deck: routes');
+  });
+}
